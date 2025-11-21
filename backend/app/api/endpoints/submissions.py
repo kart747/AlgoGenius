@@ -157,6 +157,8 @@ def submit_code(
 
     passed_all = True
     failed_case_index: Optional[int] = None
+    failed_case_input: Optional[str] = None
+    failed_case_expected: Optional[str] = None
     output_snippet = ""
     aggregate_runtime_ms = 0.0
 
@@ -191,6 +193,8 @@ def submit_code(
         if result.get("status") != "Success" or result.get("exit_code", 0) != 0:
             passed_all = False
             failed_case_index = idx
+            failed_case_input = input_data
+            failed_case_expected = case.expected_output
             # store error output as snippet
             output_snippet = output_snippet or (result.get("output") or "")[:OUTPUT_SNIPPET_LIMIT]
             break
@@ -201,6 +205,8 @@ def submit_code(
         if received != expected:
             passed_all = False
             failed_case_index = idx
+            failed_case_input = input_data
+            failed_case_expected = expected
             break
 
     # Persist submission record
@@ -258,6 +264,8 @@ def submit_code(
         "status": response_status,
         "message": message,
         "failed_case": failed_case_index,
+        "failed_case_input": failed_case_input if not passed_all else None,
+        "failed_case_expected_output": failed_case_expected if not passed_all else None,
         "stdout": submission_record.output if passed_all else "",
         "stderr": submission_record.output if not passed_all else "",
         "output": submission_record.output,

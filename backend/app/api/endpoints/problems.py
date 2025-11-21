@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import logging
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import json
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -24,6 +27,94 @@ logger = logging.getLogger("algogenius.problems")
 
 
 router = APIRouter(prefix="/problems", tags=["problems"])
+
+MIN_GENERATED_TEST_CASES = 10
+FALLBACK_EXAMPLE_LIMIT = 3
+
+_FUNCTION_TEMPLATE_CACHE: Dict[Tuple[int, str], Tuple[str, str]] = {}
+
+
+def _dedupe_test_cases(cases: List[TestCaseCreate]) -> List[TestCaseCreate]:
+    """Remove duplicate/empty test cases while preserving order."""
+    unique: List[TestCaseCreate] = []
+    seen = set()
+    for case in cases:
+        input_val = ((case.input_data or "").strip())
+        output_val = ((case.expected_output or "").strip())
+        if not input_val or not output_val:
+            continue
+        key = (input_val, output_val)
+        if key in seen:
+            continue
+        unique.append(TestCaseCreate(input_data=input_val, expected_output=output_val))
+        seen.add(key)
+    return unique
+
+
+async def _ensure_minimum_test_cases(
+    *,
+    service: GeminiService,
+    description: str,
+    test_cases: List[TestCaseCreate],
+    examples: List[ProblemExampleCreate],
+) -> List[TestCaseCreate]:
+    """Guarantee at least MIN_GENERATED_TEST_CASES test cases by topping up via Gemini."""
+
+    normalized = _dedupe_test_cases(test_cases)
+
+    if len(normalized) >= MIN_GENERATED_TEST_CASES:
+        return normalized
+
+    supplemental: List[TestCaseCreate] = []
+    prompt = (description or "").strip()
+    if prompt:
+        try:
+            extra_cases = await service.generate_test_cases(
+                prompt,
+                num_cases=MIN_GENERATED_TEST_CASES,
+            )
+        except Exception as exc:  # pragma: no cover - network failure
+            logger.warning("Supplemental test case generation failed: %s", exc)
+        else:
+            for case in extra_cases:
+                input_val = _stringify_field(case.get("input_data") or case.get("input"))
+                output_val = _stringify_field(
+                    case.get("expected_output") or case.get("output")
+                )
+                if input_val and output_val:
+                    supplemental.append(
+                        TestCaseCreate(input_data=input_val, expected_output=output_val)
+                    )
+
+    if supplemental:
+        normalized = _dedupe_test_cases(normalized + supplemental)
+
+    if len(normalized) < MIN_GENERATED_TEST_CASES and examples:
+        example_cases = [
+            TestCaseCreate(input_data=ex.input, expected_output=ex.output)
+            for ex in examples
+            if ex.input and ex.output
+        ]
+        if example_cases:
+            normalized = _dedupe_test_cases(normalized + example_cases)
+
+    if normalized:
+        while len(normalized) < MIN_GENERATED_TEST_CASES:
+            seed = normalized[len(normalized) % len(normalized)]
+            normalized.append(
+                TestCaseCreate(
+                    input_data=seed.input_data,
+                    expected_output=seed.expected_output,
+                )
+            )
+
+    if not normalized:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate sufficient test cases for this problem.",
+        )
+
+    return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +182,7 @@ class ProblemOut(BaseModel):
     examples: List[ProblemExampleResponse] = Field(default_factory=list)
     test_cases: List[TestCaseResponse] = Field(default_factory=list)
     reference_solution: Dict[str, str] = Field(default_factory=dict)
+    function_templates: Dict[str, str] = Field(default_factory=dict)
 
 
 class ProblemCountResponse(BaseModel):
@@ -129,12 +221,63 @@ class ProblemGenerateBatchResponse(BaseModel):
     created_count: int
 
 
+class FunctionTemplateResponse(BaseModel):
+    language: str
+    template: str
+    powered_by: str
+
+
+class ProblemAssistantRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000, description="User question or hint request")
+    mode: Optional[str] = Field(
+        "hint",
+        pattern="^(hint|explain|debug)$",
+        description="Response style: hint/explain/debug",
+    )
+    code_context: Optional[str] = Field(
+        None,
+        max_length=8000,
+        description="Optional code snippet to include for debugging",
+    )
+
+
+class ProblemAssistantResponse(BaseModel):
+    reply: str
+    powered_by: str
+
+
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
 
 
 def _serialize_problem(problem: Problem) -> ProblemOut:
+    example_payloads = [
+        ProblemExampleResponse(
+            id=example.id,
+            input=example.input_data,
+            output=example.output_data,
+            explanation=example.explanation,
+        )
+        for example in (problem.examples or [])
+        if example.input_data and example.output_data
+    ]
+
+    if not example_payloads:
+        fallback_examples = []
+        for test_case in (problem.test_cases or [])[:FALLBACK_EXAMPLE_LIMIT]:
+            if not test_case.input_data or not test_case.expected_output:
+                continue
+            fallback_examples.append(
+                ProblemExampleResponse(
+                    id=None,
+                    input=test_case.input_data,
+                    output=test_case.expected_output,
+                    explanation=None,
+                )
+            )
+        example_payloads = fallback_examples
+
     return ProblemOut(
         id=problem.id,
         title=problem.title,
@@ -142,15 +285,7 @@ def _serialize_problem(problem: Problem) -> ProblemOut:
         difficulty=problem.difficulty,
         created_at=problem.created_at,
         updated_at=problem.updated_at,
-        examples=[
-            ProblemExampleResponse(
-                id=example.id,
-                input=example.input_data,
-                output=example.output_data,
-                explanation=example.explanation,
-            )
-            for example in (problem.examples or [])
-        ],
+        examples=example_payloads,
         test_cases=[
             TestCaseResponse(
                 id=test_case.id,
@@ -162,6 +297,7 @@ def _serialize_problem(problem: Problem) -> ProblemOut:
         reference_solution={
             ref.language: ref.solution_code for ref in (problem.reference_solutions or [])
         },
+        function_templates={},
     )
 
 
@@ -261,7 +397,16 @@ async def _generate_problem_payload(
                 TestCaseCreate(input_data=input_val, expected_output=expected_val)
             )
 
+    test_cases = await _ensure_minimum_test_cases(
+        service=service,
+        description=ai_problem.get("description") or ai_problem.get("title") or topic,
+        test_cases=test_cases,
+        examples=examples,
+    )
+
     reference_solution: Dict[str, str] = {}
+    function_templates: Dict[str, str] = {}
+    problem_context = f"{ai_problem.get('title', topic)}\n\n{ai_problem.get('description', '')}".strip()
     for language in ("python", "cpp", "java"):
         try:
             starter = await service.generate_starter_code(
@@ -273,6 +418,16 @@ async def _generate_problem_payload(
                 "Failed to generate %s starter code: %s", language, code_error
             )
 
+        try:
+            template = await service.generate_function_template(
+                problem_context or ai_problem.get("description", ""), language
+            )
+            function_templates[language] = template
+        except Exception as template_error:
+            logger.warning(
+                "Failed to generate %s function template: %s", language, template_error
+            )
+
     problem_payload = {
         "title": ai_problem.get("title", topic.title()),
         "description": ai_problem.get("description", ""),
@@ -280,6 +435,7 @@ async def _generate_problem_payload(
         "examples": examples,
         "test_cases": test_cases,
         "reference_solution": reference_solution,
+        "function_templates": function_templates,
         "model_used": model_used or GeminiService.MODEL_PRIMARY,
     }
 
@@ -413,6 +569,117 @@ def get_problem(problem_id: int, db: Session = Depends(get_db)) -> ProblemOut:
     return _serialize_problem(problem)
 
 
+@router.post("/{problem_id}/assistant", response_model=ProblemAssistantResponse)
+async def problem_assistant(
+    problem_id: int,
+    payload: ProblemAssistantRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    del current_user  # auth check only
+    problem = (
+        db.query(Problem)
+        .options(joinedload(Problem.examples))
+        .filter(Problem.id == problem_id)
+        .first()
+    )
+
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+
+    try:
+        service = get_gemini_service()
+    except Exception as exc:  # pragma: no cover
+        logger.error("Gemini service init failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Gemini assistant unavailable") from exc
+
+    context_parts = [
+        f"Title: {problem.title}",
+        f"Difficulty: {problem.difficulty}",
+        problem.description,
+    ]
+
+    if problem.examples:
+        example_lines = ["Examples:"]
+        for example in problem.examples[:2]:
+            example_lines.append(
+                f"Input: {example.input_data}\nOutput: {example.output_data}"
+            )
+        context_parts.append("\n".join(example_lines))
+
+    problem_context = "\n\n".join(part for part in context_parts if part)
+
+    try:
+        reply = await service.generate_problem_hint(
+            problem_context=problem_context,
+            user_message=payload.message,
+            mode=payload.mode or "hint",
+            code_context=payload.code_context,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    except ConnectionError as err:
+        raise HTTPException(status_code=503, detail=str(err))
+    except Exception as err:
+        logger.error("Problem assistant failed: %s", err)
+        raise HTTPException(status_code=500, detail="Assistant failed to answer")
+
+    powered_by = service.get_last_model_used() or GeminiService.MODEL_PRIMARY
+    return ProblemAssistantResponse(reply=reply, powered_by=powered_by)
+
+
+@router.get("/{problem_id}/function-template", response_model=FunctionTemplateResponse)
+async def get_function_template_for_problem(
+    problem_id: int,
+    language: str = Query(..., pattern="^(python|cpp|java)$", description="Language for the template"),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+
+    normalized_language = language.lower()
+    cache_key = (problem_id, normalized_language)
+    cached = _FUNCTION_TEMPLATE_CACHE.get(cache_key)
+    if cached:
+        template, powered_by = cached
+        return FunctionTemplateResponse(
+            language=normalized_language,
+            template=template,
+            powered_by=powered_by,
+        )
+
+    try:
+        service = get_gemini_service()
+    except Exception as exc:  # pragma: no cover
+        logger.error("Gemini service init failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Gemini service not configured") from exc
+
+    problem_context = f"{problem.title}\n\n{problem.description}".strip()
+    try:
+        template = await service.generate_function_template(
+            problem_context or problem.description,
+            normalized_language,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    except ConnectionError as err:
+        raise HTTPException(status_code=503, detail=str(err))
+    except Exception as err:
+        logger.error("Function template generation failed: %s", err)
+        raise HTTPException(status_code=500, detail="Failed to generate function template")
+
+    powered_by = service.get_last_model_used() or GeminiService.MODEL_PRIMARY
+    _FUNCTION_TEMPLATE_CACHE[cache_key] = (template, powered_by)
+
+    return FunctionTemplateResponse(
+        language=normalized_language,
+        template=template,
+        powered_by=powered_by,
+    )
+
+
 @router.put("/{problem_id}", response_model=ProblemOut)
 def update_problem(
     problem_id: int, problem_update: ProblemUpdate, db: Session = Depends(get_db)
@@ -483,6 +750,7 @@ async def generate_problem(
             for tc in problem_payload["test_cases"]
         ],
         reference_solution=problem_payload["reference_solution"],
+        function_templates=problem_payload.get("function_templates", {}),
         created_at=None,
         updated_at=None,
     )
@@ -490,11 +758,15 @@ async def generate_problem(
     return ProblemGenerateResponse(problem=problem_out, model_used=problem_payload["model_used"])
 
 
+ALLOW_PUBLIC_PROBLEM_SAVE = os.getenv("ALLOW_PUBLIC_PROBLEM_SAVE", "true").lower() == "true"
+SaveDependency = get_current_user if ALLOW_PUBLIC_PROBLEM_SAVE else require_admin
+
+
 @router.post("/generate/save", response_model=ProblemGenerateResponse, status_code=status.HTTP_201_CREATED)
 async def generate_and_save_problem(
     payload: ProblemGenerateRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(SaveDependency),
 ) -> ProblemGenerateResponse:
     problem_payload = await _generate_problem_payload(
         topic=payload.topic, difficulty=payload.difficulty
@@ -511,6 +783,7 @@ async def generate_and_save_problem(
     )
 
     problem_out = _serialize_problem(db_problem)
+    problem_out.function_templates = problem_payload.get("function_templates", {})
     return ProblemGenerateResponse(problem=problem_out, model_used=problem_payload["model_used"])
 
 
@@ -536,7 +809,9 @@ async def generate_problem_batch(
             examples=problem_payload["examples"],
             reference_solution=problem_payload["reference_solution"],
         )
-        generated_problems.append(_serialize_problem(db_problem))
+        serialized = _serialize_problem(db_problem)
+        serialized.function_templates = problem_payload.get("function_templates", {})
+        generated_problems.append(serialized)
         model_used = problem_payload["model_used"]
 
     return ProblemGenerateBatchResponse(

@@ -6,7 +6,7 @@ import os
 from app.database import get_db
 from app.models import Problem, TestCase
 from app.services.ai_generator import AIGenerator
-from app.api.endpoints.auth import require_admin
+from app.api.endpoints.auth import require_admin, get_current_user
 
 router = APIRouter(prefix="/generate", tags=["AI Generator"])
 
@@ -14,6 +14,9 @@ router = APIRouter(prefix="/generate", tags=["AI Generator"])
 # Check if Gemini API key is available
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 use_ai = gemini_api_key is not None
+
+ALLOW_PUBLIC_PROBLEM_SAVE = os.getenv("ALLOW_PUBLIC_PROBLEM_SAVE", "true").lower() == "true"
+SaveDependency = get_current_user if ALLOW_PUBLIC_PROBLEM_SAVE else require_admin
 
 if use_ai:
     print("Gemini AI enabled for problem generation")
@@ -148,7 +151,7 @@ def generate_problem(request: ProblemGenerateRequest):
 def generate_and_save_problem(
     request: ProblemGenerateRequest,
     db: Session = Depends(get_db),
-    current_admin = Depends(require_admin)
+    current_user = Depends(SaveDependency)
 ):
     """
     Generate a problem and automatically save it to the database.
@@ -159,12 +162,12 @@ def generate_and_save_problem(
     3. Creates TestCase records for all test cases
     4. Returns the problem_id for immediate use
     
-    Admin only.
+    Requires admin unless ALLOW_PUBLIC_PROBLEM_SAVE=true in the environment.
     
     Args:
         request: Problem generation parameters
         db: Database session
-        current_admin: Admin user (from JWT)
+        current_user: Authenticated user (must be admin unless override enabled)
     
     Returns:
         Saved problem details including problem_id
@@ -320,6 +323,19 @@ class GeminiStarterCodeResponse(BaseModel):
     powered_by: str = "Google Gemini 2.0 Flash"
 
 
+class GeminiFunctionTemplateRequest(BaseModel):
+    """Request for Gemini function template generation"""
+    problem_text: str = Field(..., description="Problem description")
+    language: str = Field(..., pattern="^(python|cpp|java)$", description="Programming language")
+
+
+class GeminiFunctionTemplateResponse(BaseModel):
+    """Response for Gemini function template generation"""
+    template: str
+    language: str
+    powered_by: str = "Google Gemini 2.0 Flash"
+
+
 @router.post("/gemini/testcases", response_model=GeminiTestCaseResponse)
 async def generate_testcases_with_gemini(request: GeminiTestCaseRequest):
     """
@@ -409,4 +425,40 @@ async def generate_startercode_with_gemini(request: GeminiStarterCodeRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate starter code: {str(e)}"
+        )
+
+
+@router.post("/gemini/function-template", response_model=GeminiFunctionTemplateResponse)
+async def generate_function_template_with_gemini(request: GeminiFunctionTemplateRequest):
+    """Generate a parameterized function template using Google Gemini."""
+    if not use_ai:
+        raise HTTPException(
+            status_code=503,
+            detail="Gemini AI not available. Set GEMINI_API_KEY environment variable."
+        )
+
+    try:
+        from app.services.gemini_service import generate_function_template
+
+        template = await generate_function_template(
+            request.problem_text,
+            request.language,
+        )
+
+        return {
+            "template": template,
+            "language": request.language,
+            "powered_by": "Google Gemini 2.0 Flash",
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except ConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate function template: {str(e)}"
         )

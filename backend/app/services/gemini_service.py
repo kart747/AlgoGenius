@@ -13,15 +13,22 @@ Environment:
 
 import os
 import json
+import re
 import google.generativeai as genai
 from typing import List, Dict, Optional
 import asyncio
 from functools import wraps
+from app.database import SessionLocal
+from app.models import User
 
 try:
     from google.generativeai.types import FinishReason
 except ImportError:  # pragma: no cover - defensive import if typing changes
     FinishReason = None
+
+
+class NonLiteralValueError(ValueError):
+    """Raised when Gemini returns descriptive inputs instead of literal data."""
 
 
 def async_wrap(func):
@@ -38,7 +45,15 @@ class GeminiService:
     
     # Model configuration
     MODEL_PRIMARY = "gemini-2.5-flash"      # Primary model (requires quota)
-    MODEL_FALLBACK = "gemini-1.5-flash-8b"  # Free fallback model
+    MODEL_FALLBACK = "gemini-2.5-flash-lite"  # Free fallback model
+    MAX_LITERAL_ATTEMPTS = 3
+    _LITERAL_PREFIX_PATTERN = re.compile(r"^\s*(input|inputs|stdin|expected output|expected_output|output|stdout)\s*[:\-]\s*",
+                                         re.IGNORECASE)
+    _NON_LITERAL_REGEXES = [
+        re.compile(r"\(.*?\brepeat(?:ed)?\b.*?\)", re.IGNORECASE),
+        re.compile(r"\brepeat(?:ed)?\b.*?\btime(s)?\b", re.IGNORECASE),
+        re.compile(r"\(.*?\bx\s*\d+.*?\)", re.IGNORECASE),
+    ]
     
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -74,6 +89,120 @@ class GeminiService:
     def _log(self, message: str):
         """Structured logging for model usage"""
         print(f"[GeminiService] {message}")
+
+    def _strip_markdown_fence(self, text: str) -> str:
+        """Remove optional markdown fences from model output."""
+        stripped = text.strip()
+        if stripped.startswith("```"):
+            parts = stripped.split("```")
+            if len(parts) >= 2:
+                candidate = parts[1].strip()
+                newline_index = candidate.find("\n")
+                if newline_index != -1:
+                    first_line = candidate[:newline_index].strip().lower()
+                    if first_line in {"json", "python", "cpp", "c++", "java", "text"}:
+                        candidate = candidate[newline_index + 1 :].strip()
+                return candidate
+        return stripped
+
+    def _compose_test_case_prompt(self, problem_text: str, num_cases: int, attempt: int) -> str:
+        """Build the prompt with optional extra emphasis for literal inputs."""
+        literal_rules = """
+Input/Output Rules:
+- Every input_data value must be the literal stdin text that the program receives.
+- Expand repetitions explicitly. Do NOT describe repetition using words like "repeated" or "times".
+- Never prepend labels like "Input:" or "Output:". Provide just the raw values.
+- Use \n characters to denote newlines when needed and nothing else.
+- The expected_output field must also only contain literal text with no narration.
+""".strip()
+
+        if attempt > 1:
+            literal_rules += "\n- STRICT: Attempt {} failed. Do not use descriptive language—write the exact characters that would be typed.".format(attempt)
+
+        return f"""Generate {num_cases} test cases for this coding problem.
+
+Problem:
+{problem_text}
+
+Requirements:
+1. Cover basic cases, edge cases, and boundary conditions
+2. Each test case must have valid input and exact expected output
+3. No duplicate test cases
+4. Input format should be clear and consistent
+5. Expected output must be precise (no extra spaces or newlines unless required)
+{literal_rules}
+
+Return ONLY valid JSON array in this exact format:
+[
+  {{"input_data": "example input", "expected_output": "example output"}},
+  {{"input_data": "another input", "expected_output": "another output"}}
+]
+
+Do not include any markdown formatting, code blocks, or explanations.
+Only return the raw JSON array."""
+
+    async def _request_test_cases(self, prompt: str) -> List[Dict[str, str]]:
+        """Call Gemini with the provided prompt and return parsed JSON data."""
+        response_text = await self._generate_with_fallback(prompt)
+        cleaned_text = self._strip_markdown_fence(response_text)
+        test_cases = json.loads(cleaned_text)
+
+        if not isinstance(test_cases, list):
+            raise ValueError("Response is not a JSON array")
+
+        return test_cases
+
+    def _strip_label_prefix(self, value: str) -> str:
+        """Remove leading labels like 'Input:' to keep data literal."""
+        return re.sub(self._LITERAL_PREFIX_PATTERN, "", value)
+
+    def _contains_non_literal_phrase(self, value: str) -> bool:
+        """Detect natural-language descriptions such as '(repeated 3 times)'."""
+        return any(pattern.search(value) for pattern in self._NON_LITERAL_REGEXES)
+
+    def _normalize_literal_field(self, raw_value: Optional[str], field_label: str, strict_literal: bool = False) -> str:
+        if raw_value is None:
+            raise ValueError(f"{field_label} missing in Gemini response")
+
+        value = str(raw_value).strip()
+        if not value:
+            raise ValueError(f"{field_label} is empty")
+
+        if strict_literal:
+            value = self._strip_label_prefix(value)
+            value = value.replace("\r\n", "\n")
+            if self._contains_non_literal_phrase(value):
+                raise NonLiteralValueError(
+                    f"{field_label} contains descriptive text instead of literal stdin data"
+                )
+
+        return value
+
+    def _sanitize_test_cases(self, raw_cases: List[Dict[str, str]], minimum_cases: int) -> List[Dict[str, str]]:
+        sanitized: List[Dict[str, str]] = []
+
+        for idx, tc in enumerate(raw_cases, start=1):
+            if not isinstance(tc, dict):
+                raise ValueError("Test case is not an object")
+
+            input_value = self._normalize_literal_field(
+                tc.get("input_data") or tc.get("input"),
+                f"test_cases[{idx}].input_data",
+                strict_literal=True,
+            )
+            output_value = self._normalize_literal_field(
+                tc.get("expected_output") or tc.get("output"),
+                f"test_cases[{idx}].expected_output",
+            )
+
+            sanitized.append({"input_data": input_value, "expected_output": output_value})
+
+        if len(sanitized) < minimum_cases:
+            raise ValueError(
+                f"Gemini returned only {len(sanitized)} test cases, expected at least {minimum_cases}"
+            )
+
+        return sanitized
 
     def _safe_response_text(self, response) -> str:
         """Extract text from a Gemini response without triggering quick accessor errors."""
@@ -229,50 +358,32 @@ class GeminiService:
             #     ...
             # ]
         """
-        prompt = f"""Generate {num_cases} test cases for this coding problem.
-
-Problem:
-{problem_text}
-
-Requirements:
-1. Cover basic cases, edge cases, and boundary conditions
-2. Each test case must have valid input and exact expected output
-3. No duplicate test cases
-4. Input format should be clear and consistent
-5. Expected output must be precise (no extra spaces or newlines unless required)
-
-Return ONLY valid JSON array in this exact format:
-[
-  {{"input_data": "example input", "expected_output": "example output"}},
-  {{"input_data": "another input", "expected_output": "another output"}}
-]
-
-Do not include any markdown formatting, code blocks, or explanations.
-Only return the raw JSON array."""
-
         try:
-            # Use fallback logic to try primary then fallback model
-            response_text = await self._generate_with_fallback(prompt)
-            response_text = response_text.strip()
-            
-            # Clean markdown code blocks if present
-            if response_text.startswith("```json"):
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif response_text.startswith("```"):
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-            
-            # Parse JSON
-            test_cases = json.loads(response_text)
-            
-            # Validate structure
-            if not isinstance(test_cases, list):
-                raise ValueError("Response is not a JSON array")
-            
-            for tc in test_cases:
-                if "input_data" not in tc or "expected_output" not in tc:
-                    raise ValueError("Test case missing required fields")
-            
-            return test_cases
+            last_literal_error: Optional[NonLiteralValueError] = None
+
+            for attempt in range(1, self.MAX_LITERAL_ATTEMPTS + 1):
+                prompt = self._compose_test_case_prompt(problem_text, num_cases, attempt)
+                try:
+                    raw_cases = await self._request_test_cases(prompt)
+                    sanitized_cases = self._sanitize_test_cases(raw_cases, num_cases)
+                    return sanitized_cases
+                except NonLiteralValueError as literal_error:
+                    last_literal_error = literal_error
+                    self._log(
+                        f"🔁 Non-literal test cases detected on attempt {attempt}. Requesting regeneration."
+                    )
+                    if attempt == self.MAX_LITERAL_ATTEMPTS:
+                        raise
+                    continue
+            # Should never reach here, but guard for safety
+            if last_literal_error:
+                raise last_literal_error
+            raise ValueError("Gemini did not return any test cases")
+        
+        except NonLiteralValueError as e:
+            raise ValueError(
+                "Gemini kept returning descriptive test inputs. Please try again or adjust the prompt."
+            ) from e
         
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON response from Gemini: {str(e)}")
@@ -390,6 +501,106 @@ Do not wrap in code blocks or add any text before/after the code."""
             else:
                 raise Exception(f"Gemini API error: {str(e)}")
     
+    async def generate_function_template(
+        self,
+        problem_text: str,
+        language: str,
+    ) -> str:
+        """Generate a pure function template with explicit parameters instead of stdin handling."""
+
+        supported_languages = {
+            "python": {"name": "Python 3", "function": "solve_problem"},
+            "cpp": {"name": "C++", "function": "solveProblem"},
+            "java": {"name": "Java", "function": "solveProblem"},
+        }
+
+        language_key = language.lower()
+        if language_key not in supported_languages:
+            raise ValueError(
+                f"Unsupported language: {language}. Supported: {', '.join(supported_languages.keys())}"
+            )
+
+        lang_data = supported_languages[language_key]
+        function_name = lang_data["function"]
+        lang_name = lang_data["name"]
+
+        prompt = f"""You are an assistant that writes clean {lang_name} function templates.
+
+    Problem:
+    {problem_text}
+
+    Instructions:
+    1. Provide a single function named {function_name} that captures all required inputs as parameters.
+    2. Infer clear parameter names/types from the problem description. Use type hints for Python and proper types for {lang_name}.
+    3. Include a docstring or comment describing the parameters, return value, and what the function should compute.
+    4. Do NOT read from stdin, write to stdout, or include any main/driver code.
+    5. Do not implement the algorithm. Include a TODO comment or placeholder return/raise to indicate where logic goes.
+    6. Return only the function template code without markdown fences or explanations.
+    """
+            # Include driver code instructions
+
+        try:
+            template = await self._generate_with_fallback(prompt)
+            template = self._strip_markdown_fence(template).strip()
+            return template
+
+        except Exception as e:
+            error_msg = str(e).lower()
+
+            if "api key" in error_msg or "authentication" in error_msg:
+                raise ValueError("Invalid Gemini API key. Check GEMINI_API_KEY environment variable.")
+
+            elif "network" in error_msg or "connection" in error_msg:
+                raise ConnectionError(f"Network error connecting to Gemini API: {str(e)}")
+
+            else:
+                raise Exception(f"Gemini API error: {str(e)}")
+
+    async def generate_problem_hint(
+        self,
+        problem_context: str,
+        user_message: str,
+        mode: str = "hint",
+        code_context: Optional[str] = None,
+    ) -> str:
+        """Provide conversational help (hints/explanations) about a problem."""
+
+        normalized_mode = (mode or "hint").lower()
+        if normalized_mode not in {"hint", "explain", "debug"}:
+            normalized_mode = "hint"
+
+        style_map = {
+            "hint": "Guide the learner with incremental hints. Ask leading questions, point out key observations, but avoid giving the full solution or code snippet.",
+            "explain": "Deliver a thorough explanation of the approach, covering intuition, algorithm steps, complexity, and edge cases. You may reference pseudocode but avoid dumping the entire solution unless explicitly requested.",
+            "debug": "Review the provided code context, highlight logical or structural issues, and suggest targeted corrections without rewriting everything from scratch.",
+        }
+
+        tone_instruction = style_map[normalized_mode]
+        code_section = f"\n\nUser Code Context:\n{code_context.strip()}" if code_context else ""
+
+        prompt = f"""You are an encouraging AI coding mentor helping a learner with a single programming problem.
+
+Problem Context:
+{problem_context.strip()}
+
+Learner Question:
+{user_message.strip()}
+{code_section}
+
+Guidelines:
+- {tone_instruction}
+- Keep the tone friendly and focus on reasoning steps the learner can follow next.
+- Reference the problem context (constraints, inputs/outputs, tricky cases) where helpful.
+- Use short paragraphs or bullet points for readability.
+- Never reveal hidden test cases or paste complete final code unless the learner explicitly insists.
+"""
+
+        try:
+            reply = await self._generate_with_fallback(prompt)
+            return reply.strip()
+        except Exception as e:
+            raise Exception(f"Gemini problem assistant error: {str(e)}")
+    
     async def generate_complete_problem(
         self,
         topic: str,
@@ -491,6 +702,28 @@ async def generate_starter_code(problem_text: str, language: str) -> str:
     """
     service = get_gemini_service()
     return await service.generate_starter_code(problem_text, language)
+
+
+async def generate_function_template(problem_text: str, language: str) -> str:
+    """Generate a parameterized function template without stdin handling."""
+    service = get_gemini_service()
+    return await service.generate_function_template(problem_text, language)
+
+
+async def generate_problem_hint(
+    problem_context: str,
+    user_message: str,
+    mode: str = "hint",
+    code_context: Optional[str] = None,
+) -> str:
+    """Expose conversational assistance for other modules."""
+    service = get_gemini_service()
+    return await service.generate_problem_hint(
+        problem_context,
+        user_message,
+        mode=mode,
+        code_context=code_context,
+    )
 
 
 # Example usage

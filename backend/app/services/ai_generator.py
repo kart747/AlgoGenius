@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 import random
 import os
 import asyncio
+import copy
 
 
 # Try to import Gemini service (optional)
@@ -18,6 +19,9 @@ try:
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
+
+
+MIN_TEST_CASES = 10
 
 
 class AIGenerator:
@@ -284,7 +288,7 @@ For example, if the input is `1 2 3 4 5`, the output should be `15`.""",
                     self.gemini_service.generate_complete_problem(topic, difficulty)
                 )
                 loop.close()
-                return problem
+                return self._normalize_problem(problem)
             except Exception as e:
                 print(f"WARNING: Gemini generation failed: {e}")
                 print("   Falling back to templates...")
@@ -297,12 +301,71 @@ For example, if the input is `1 2 3 4 5`, the output should be `15`.""",
             # Return a generic problem if topic not found
             template = self._generate_generic_problem(topic, difficulty)
         
-        # Override difficulty if specified
-        problem = template.copy()
+            # Override difficulty if specified
+            problem = template
         if difficulty in ["easy", "medium", "hard"]:
             problem["difficulty"] = difficulty
         
-        return problem
+        return self._normalize_problem(problem)
+
+    def _normalize_problem(self, problem: Dict) -> Dict:
+        """Ensure downstream consumers receive consistent problem structure."""
+        if not isinstance(problem, dict):
+            return problem
+
+        # Protect against templates sharing nested lists
+        normalized = copy.deepcopy(problem)
+        self._ensure_min_test_cases(normalized)
+        return normalized
+
+    def _stringify(self, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value.strip()
+        return str(value).strip()
+
+    def _ensure_min_test_cases(self, problem: Dict) -> None:
+        raw_cases = problem.get("test_cases") or []
+        normalized: List[Dict[str, str]] = []
+        seen = set()
+
+        for case in raw_cases:
+            input_val = self._stringify(case.get("input") or case.get("input_data"))
+            output_val = self._stringify(
+                case.get("expected_output") or case.get("output")
+            )
+            if not input_val or not output_val:
+                continue
+            key = (input_val, output_val)
+            if key in seen:
+                continue
+            normalized.append({"input": input_val, "expected_output": output_val})
+            seen.add(key)
+
+        sample_source = problem.get("samples") or []
+        for sample in sample_source:
+            if len(normalized) >= MIN_TEST_CASES:
+                break
+            input_val = self._stringify(sample.get("input") or sample.get("input_data"))
+            output_val = self._stringify(sample.get("output") or sample.get("expected_output"))
+            if not input_val or not output_val:
+                continue
+            key = (input_val, output_val)
+            if key in seen:
+                continue
+            normalized.append({"input": input_val, "expected_output": output_val})
+            seen.add(key)
+
+        if normalized:
+            while len(normalized) < MIN_TEST_CASES:
+                seed = normalized[len(normalized) % len(normalized)]
+                normalized.append({"input": seed["input"], "expected_output": seed["expected_output"]})
+        else:
+            for i in range(1, MIN_TEST_CASES + 1):
+                normalized.append({"input": str(i), "expected_output": str(i)})
+
+        problem["test_cases"] = normalized
     
     def _generate_generic_problem(self, topic: str, difficulty: str) -> Dict:
         """

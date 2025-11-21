@@ -1,11 +1,16 @@
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.endpoints import submissions, auth, problems, users, admin, generator
 from dotenv import load_dotenv
 import os
 
-# Load environment variables from .env file
-load_dotenv()
+ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+
+# Load environment variables before importing route modules so they can
+# read settings (e.g., GEMINI_API_KEY) at import time.
+load_dotenv(dotenv_path=ENV_PATH, override=False)
+
+from app.api.endpoints import submissions, auth, problems, users, admin, generator
 
 app = FastAPI(
     title="AlgoGenius Code Submission Platform",
