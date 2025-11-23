@@ -79,7 +79,9 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         "access_token": token,
         "token_type": "bearer",
         "user_id": user.id,
-        "username": user.username
+        "username": user.username,
+        "email": user.email,
+        "is_admin": bool(user.is_admin),
     }
 
 # JWT authentication dependency

@@ -20,6 +20,7 @@ class User(Base):
     
     # Relationship to submissions
     submissions = relationship("Submission", back_populates="user")
+    comments = relationship("ProblemComment", back_populates="user", cascade="all, delete-orphan")
 
 
 class Submission(Base):
@@ -65,6 +66,12 @@ class Problem(Base):
         back_populates="problem",
         cascade="all, delete-orphan",
     )
+    comments = relationship(
+        "ProblemComment",
+        back_populates="problem",
+        cascade="all, delete-orphan",
+        order_by="ProblemComment.created_at",
+    )
 
 
 class TestCase(Base):
@@ -100,3 +107,17 @@ class ProblemReferenceSolution(Base):
     solution_code = Column(Text, nullable=False)
 
     problem = relationship("Problem", back_populates="reference_solutions")
+
+
+class ProblemComment(Base):
+    __tablename__ = "problem_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    problem_id = Column(Integer, ForeignKey("problems.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    problem = relationship("Problem", back_populates="comments")
+    user = relationship("User", back_populates="comments")

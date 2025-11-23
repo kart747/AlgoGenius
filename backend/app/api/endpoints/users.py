@@ -18,6 +18,7 @@ class UserProfileResponse(BaseModel):
     xp: int
     current_streak: int
     last_submission_date: Optional[date]
+    is_admin: bool
 
     class Config:
         from_attributes = True

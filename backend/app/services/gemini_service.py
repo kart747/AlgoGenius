@@ -18,6 +18,7 @@ import google.generativeai as genai
 from typing import List, Dict, Optional
 import asyncio
 from functools import wraps
+from textwrap import dedent
 from app.database import SessionLocal
 from app.models import User
 
@@ -53,6 +54,9 @@ class GeminiService:
         re.compile(r"\(.*?\brepeat(?:ed)?\b.*?\)", re.IGNORECASE),
         re.compile(r"\brepeat(?:ed)?\b.*?\btime(s)?\b", re.IGNORECASE),
         re.compile(r"\(.*?\bx\s*\d+.*?\)", re.IGNORECASE),
+        re.compile(r"=\s*\[", re.IGNORECASE),
+        re.compile(r"\b(arr|array|nums?|numbers?|target|value|values|k)\s*=\s*", re.IGNORECASE),
+        re.compile(r"\[\s*-?\d+(?:\s*,\s*-?\d+)+\s*\]"),
     ]
     
     def __init__(self, api_key: Optional[str] = None):
@@ -110,10 +114,16 @@ class GeminiService:
         literal_rules = """
 Input/Output Rules:
 - Every input_data value must be the literal stdin text that the program receives.
+- Follow HackerRank-style stdin formatting: place each scalar on its own line (or as whitespace-separated tokens) exactly as described. For one-dimensional arrays, print either `n` on its own line (if the statement specifies the length) or just the space-separated elements. For matrices, print `rows cols` on the first line, then each subsequent line contains a row's space-separated values.
+- NEVER include variable names, assignment operators, JSON brackets, bullet lists, or narration like "arr = [1, 2, 3] target = 2". The correct form for that example is:
+  5\n1 2 3 4 5\n2
+- Do not wrap the entire input in [] or {}. Each value must appear exactly as typed on stdin.
 - Expand repetitions explicitly. Do NOT describe repetition using words like "repeated" or "times".
 - Never prepend labels like "Input:" or "Output:". Provide just the raw values.
 - Use \n characters to denote newlines when needed and nothing else.
-- The expected_output field must also only contain literal text with no narration.
+- The expected_output field must also only contain literal text with no narration or explanations.
+    - Keep each test case modest: no more than 10 lines of stdin, no arrays longer than 30 elements, and prefer small integers (|value| <= 10^4) unless the statement explicitly demands otherwise.
+    - Before finalizing a test case, manually recompute the correct output for the provided input and double-check that expected_output matches exactly. If unsure, discard the case.
 """.strip()
 
         if attempt > 1:
@@ -195,6 +205,12 @@ Only return the raw JSON array."""
                 f"test_cases[{idx}].expected_output",
             )
 
+            line_count = input_value.count("\n") + 1
+            token_count = len(input_value.split())
+            if line_count > 10 or token_count > 120:
+                raise ValueError(
+                    f"test_cases[{idx}].input_data is too large (lines={line_count}, tokens={token_count}); keep stdin concise"
+                )
             sanitized.append({"input_data": input_value, "expected_output": output_value})
 
         if len(sanitized) < minimum_cases:
@@ -509,9 +525,21 @@ Do not wrap in code blocks or add any text before/after the code."""
         """Generate a pure function template with explicit parameters instead of stdin handling."""
 
         supported_languages = {
-            "python": {"name": "Python 3", "function": "solve_problem"},
-            "cpp": {"name": "C++", "function": "solveProblem"},
-            "java": {"name": "Java", "function": "solveProblem"},
+            "python": {
+                "name": "Python 3",
+                "function": "solve_problem",
+                "parser": "parse_input",
+            },
+            "cpp": {
+                "name": "C++",
+                "function": "solveProblem",
+                "parser": "ParseInput",
+            },
+            "java": {
+                "name": "Java",
+                "function": "solveProblem",
+                "parser": "ParsedInput",
+            },
         }
 
         language_key = language.lower()
@@ -521,40 +549,41 @@ Do not wrap in code blocks or add any text before/after the code."""
             )
 
         lang_data = supported_languages[language_key]
-        function_name = lang_data["function"]
         lang_name = lang_data["name"]
 
-        prompt = f"""You are an assistant that writes clean {lang_name} function templates.
+        minimal_templates = {
+            "python": (
+                "def main():\n"
+                "    # TODO: read from stdin and write to stdout\n"
+                "    pass\n\n"
+                "if __name__ == \"__main__\":\n"
+                "    main()\n"
+            ),
+            "cpp": (
+                "#include <bits/stdc++.h>\n"
+                "using namespace std;\n\n"
+                "int main() {\n"
+                "    ios::sync_with_stdio(false);\n"
+                "    cin.tie(nullptr);\n\n"
+                "    // TODO: read from stdin and write to stdout\n"
+                "    return 0;\n"
+                "}\n"
+            ),
+            "java": (
+                "import java.io.*;\n"
+                "import java.util.*;\n\n"
+                "public class Main {\n"
+                "    public static void main(String[] args) throws Exception {\n"
+                "        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n"
+                "        PrintWriter out = new PrintWriter(System.out);\n"
+                "        // TODO: read input via br and write output via out\n"
+                "        out.flush();\n"
+                "    }\n"
+                "}\n"
+            ),
+        }
 
-    Problem:
-    {problem_text}
-
-    Instructions:
-    1. Provide a single function named {function_name} that captures all required inputs as parameters.
-    2. Infer clear parameter names/types from the problem description. Use type hints for Python and proper types for {lang_name}.
-    3. Include a docstring or comment describing the parameters, return value, and what the function should compute.
-    4. Do NOT read from stdin, write to stdout, or include any main/driver code.
-    5. Do not implement the algorithm. Include a TODO comment or placeholder return/raise to indicate where logic goes.
-    6. Return only the function template code without markdown fences or explanations.
-    """
-            # Include driver code instructions
-
-        try:
-            template = await self._generate_with_fallback(prompt)
-            template = self._strip_markdown_fence(template).strip()
-            return template
-
-        except Exception as e:
-            error_msg = str(e).lower()
-
-            if "api key" in error_msg or "authentication" in error_msg:
-                raise ValueError("Invalid Gemini API key. Check GEMINI_API_KEY environment variable.")
-
-            elif "network" in error_msg or "connection" in error_msg:
-                raise ConnectionError(f"Network error connecting to Gemini API: {str(e)}")
-
-            else:
-                raise Exception(f"Gemini API error: {str(e)}")
+        return minimal_templates[language_key]
 
     async def generate_problem_hint(
         self,
@@ -616,7 +645,8 @@ Guidelines:
         Returns:
             Complete problem with title, description, constraints, samples, test_cases
         """
-        prompt = f"""Generate a complete {difficulty} level coding problem about {topic}.
+        prompt = dedent(
+            f"""Generate a complete {difficulty} level coding problem about {topic}.
 
 Requirements:
 1. Clear problem title
@@ -624,6 +654,17 @@ Requirements:
 3. Specific constraints with ranges
 4. 2 sample inputs/outputs with explanations
 5. 10 unique test cases covering edge cases
+6. All `samples[].input` and `test_cases[].input` values must be the exact stdin text a judge like HackerRank/HackerEarth/Codeforces would provide.
+7. Keep each stdin reasonably small (<= 10 lines, <= 30 numbers per array, values within ±10^4 unless the problem demands larger).
+
+Input/Output formatting rules:
+- Never wrap inputs in [] or {{}} and never include variable names (no `arr = [1, 2, 3]`).
+- Scalars go on their own line or as whitespace-separated tokens.
+- One-dimensional arrays: optionally output `n` on its own line, then the space-separated elements on the next line.
+- Matrices: first line `rows cols`, then each row as space-separated values on its own line.
+- Use literal `\n` characters to denote newlines inside JSON strings; no bullet points or narration.
+- `expected_output`/`output` must also be raw stdout text with no explanations appended.
+- Double-check every expected_output by actually reasoning through the provided input; never guess.
 
 Return ONLY valid JSON in this exact format:
 {{
@@ -640,6 +681,7 @@ Return ONLY valid JSON in this exact format:
 }}
 
 Do not include markdown formatting or code blocks."""
+        ).strip()
 
         try:
             # Use fallback logic to try primary then fallback model
