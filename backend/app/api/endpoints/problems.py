@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -466,26 +467,45 @@ async def _generate_problem_payload(
         reference_solution: Dict[str, str] = {}
         function_templates: Dict[str, str] = {}
         problem_context = f"{title_candidate}\n\n{ai_problem.get('description', '')}".strip()
-        for language in ("python", "cpp", "java"):
+        description_text = ai_problem.get("description", "")
+
+        async def build_language_assets(language: str):
+            starter = None
+            template = None
             try:
                 starter = await service.generate_starter_code(
-                    ai_problem.get("description", ""), language
+                    description_text,
+                    language,
                 )
-                reference_solution[language] = starter
             except Exception as code_error:
                 logger.warning(
-                    "Failed to generate %s starter code: %s", language, code_error
+                    "Failed to generate %s starter code: %s",
+                    language,
+                    code_error,
                 )
 
             try:
                 template = await service.generate_function_template(
-                    problem_context or ai_problem.get("description", ""), language
+                    problem_context or description_text,
+                    language,
                 )
-                function_templates[language] = template
             except Exception as template_error:
                 logger.warning(
-                    "Failed to generate %s function template: %s", language, template_error
+                    "Failed to generate %s function template: %s",
+                    language,
+                    template_error,
                 )
+            return language, starter, template
+
+        language_results = await asyncio.gather(
+            *(build_language_assets(language) for language in ("python", "cpp", "java"))
+        )
+
+        for language, starter, template in language_results:
+            if starter:
+                reference_solution[language] = starter
+            if template:
+                function_templates[language] = template
 
         fallback_used = bool(
             problem_model_used and problem_model_used != GeminiService.MODEL_PRIMARY
