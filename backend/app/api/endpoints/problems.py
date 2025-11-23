@@ -214,6 +214,7 @@ class ProblemGenerateBatchRequest(ProblemGenerateRequest):
 class ProblemGenerateResponse(BaseModel):
     problem: ProblemOut
     model_used: str
+    fallback_used: bool = False
 
 
 class ProblemGenerateBatchResponse(BaseModel):
@@ -405,7 +406,7 @@ async def _generate_problem_payload(
 
     for attempt in range(1, attempts_allowed + 1):
         ai_problem = await service.generate_complete_problem(topic, difficulty)
-        model_used = service.get_last_model_used()
+        problem_model_used = service.get_last_model_used()
 
         title_candidate = (ai_problem.get("title") or topic.title()).strip()
 
@@ -486,6 +487,10 @@ async def _generate_problem_payload(
                     "Failed to generate %s function template: %s", language, template_error
                 )
 
+        fallback_used = bool(
+            problem_model_used and problem_model_used != GeminiService.MODEL_PRIMARY
+        )
+
         problem_payload = {
             "title": title_candidate,
             "description": ai_problem.get("description", ""),
@@ -494,7 +499,8 @@ async def _generate_problem_payload(
             "test_cases": test_cases,
             "reference_solution": reference_solution,
             "function_templates": function_templates,
-            "model_used": model_used or GeminiService.MODEL_PRIMARY,
+            "model_used": problem_model_used or GeminiService.MODEL_PRIMARY,
+            "fallback_used": fallback_used,
         }
 
         return problem_payload
@@ -874,7 +880,11 @@ async def generate_problem(
         updated_at=None,
     )
 
-    return ProblemGenerateResponse(problem=problem_out, model_used=problem_payload["model_used"])
+    return ProblemGenerateResponse(
+        problem=problem_out,
+        model_used=problem_payload["model_used"],
+        fallback_used=problem_payload["fallback_used"],
+    )
 
 
 ALLOW_PUBLIC_PROBLEM_SAVE = os.getenv("ALLOW_PUBLIC_PROBLEM_SAVE", "true").lower() == "true"
@@ -906,7 +916,11 @@ async def generate_and_save_problem(
 
     problem_out = _serialize_problem(db_problem)
     problem_out.function_templates = problem_payload.get("function_templates", {})
-    return ProblemGenerateResponse(problem=problem_out, model_used=problem_payload["model_used"])
+    return ProblemGenerateResponse(
+        problem=problem_out,
+        model_used=problem_payload["model_used"],
+        fallback_used=problem_payload["fallback_used"],
+    )
 
 
 @router.post("/generate/batch", response_model=ProblemGenerateBatchResponse, status_code=status.HTTP_201_CREATED)

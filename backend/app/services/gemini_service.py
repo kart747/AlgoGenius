@@ -45,8 +45,8 @@ class GeminiService:
     """Service class for Google Gemini API interactions with automatic fallback"""
     
     # Model configuration
-    MODEL_PRIMARY = "gemini-2.5-flash"      # Primary model (requires quota)
-    MODEL_FALLBACK = "gemini-2.5-flash-lite"  # Free fallback model
+    MODEL_PRIMARY = "gemini-2.5-pro"      # Primary model (requires quota)
+    MODEL_FALLBACK = "gemini-2.5-flash"  # Free fallback model
     MAX_LITERAL_ATTEMPTS = 3
     _LITERAL_PREFIX_PATTERN = re.compile(r"^\s*(input|inputs|stdin|expected output|expected_output|output|stdout)\s*[:\-]\s*",
                                          re.IGNORECASE)
