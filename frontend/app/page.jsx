@@ -207,7 +207,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
-      <div className="absolute inset-0 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="pointer-events-none absolute -top-24 right-24 h-72 w-72 rounded-full bg-purple-500/20 blur-[120px]" />
         <div className="pointer-events-none absolute bottom-0 left-10 h-80 w-80 rounded-full bg-blue-500/20 blur-[120px]" />
       </div>
@@ -256,14 +256,7 @@ export default function HomePage() {
                   >
                     📚 Existing Problems
                   </Link>
-                  {isAdmin && (
-                    <Link
-                      href="/admin/generate"
-                      className={`${heroButtonsBase} ${outlineButton}`}
-                    >
-                      🧠 Generate Problem
-                    </Link>
-                  )}
+                  {/* Admin-specific controls live elsewhere; no duplicate buttons here. */}
                 </>
               ) : (
                 <div className="flex flex-wrap items-center justify-center gap-3">
@@ -360,18 +353,6 @@ export default function HomePage() {
               </ul>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-              <p className="text-sm text-white/60">
-                Tip: Admins can generate fresh problems with Gemini under
-                <Link
-                  href="/admin/generate"
-                  className="ml-2 font-semibold text-white hover:underline"
-                >
-                  AI Problem Generator
-                </Link>
-                .
-              </p>
-            </div>
           </aside>
         </section>
       </main>

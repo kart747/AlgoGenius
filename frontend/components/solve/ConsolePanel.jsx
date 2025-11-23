@@ -11,6 +11,7 @@ export default function ConsolePanel({
   executionTime,
   memoryUsage,
   busy,
+  failedCaseDetails,
   onTestInputChange,
   onRun,
   onSubmit,
@@ -69,7 +70,7 @@ export default function ConsolePanel({
       </div>
 
       {/* Content */}
-      <div className="min-h-[200px] max-h-[300px] overflow-auto p-4">
+      <div className="min-h-[180px] max-h-[260px] overflow-auto p-4">
         {activeTab === "input" && (
           <div className="space-y-2">
             <label className="block text-xs font-medium text-slate-400">
@@ -107,6 +108,27 @@ export default function ConsolePanel({
             ) : (
               <div className="rounded-lg border border-slate-700/60 bg-slate-950/60 p-3 text-center text-sm text-slate-500">
                 No errors
+              </div>
+            )}
+            {failedCaseDetails && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-950/20 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-amber-200">
+                  Hidden test case #{failedCaseDetails.index ?? "?"}
+                </div>
+                <div className="mt-2 text-xs text-amber-100">
+                  <div className="font-semibold text-amber-200">Input</div>
+                  <pre className="mt-1 rounded border border-amber-400/30 bg-black/30 p-2 text-[11px] text-amber-100 whitespace-pre-wrap">
+                    {failedCaseDetails.input || "(empty input)"}
+                  </pre>
+                </div>
+                <div className="mt-3 text-xs text-amber-100">
+                  <div className="font-semibold text-amber-200">
+                    Expected Output
+                  </div>
+                  <pre className="mt-1 rounded border border-amber-400/30 bg-black/30 p-2 text-[11px] text-amber-100 whitespace-pre-wrap">
+                    {failedCaseDetails.expected || "(empty output)"}
+                  </pre>
+                </div>
               </div>
             )}
           </div>

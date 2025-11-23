@@ -8,7 +8,7 @@ import json
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import asc, desc, func
 from sqlalchemy.orm import Session, joinedload
 
@@ -34,6 +34,34 @@ MIN_GENERATED_TEST_CASES = 10
 FALLBACK_EXAMPLE_LIMIT = 3
 
 _FUNCTION_TEMPLATE_CACHE: Dict[Tuple[int, str], Tuple[str, str]] = {}
+
+
+def _normalize_topics(primary: Optional[str], extras: List[str]) -> List[str]:
+    ordered: List[str] = []
+    seen = set()
+    candidates: List[str] = []
+    if primary:
+        candidates.append(primary)
+    candidates.extend(extras or [])
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        normalized = candidate.strip()
+        if not normalized:
+            continue
+        lowered = normalized.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        ordered.append(normalized)
+
+    if not ordered:
+        raise HTTPException(
+            status_code=400, detail="At least one topic is required to generate a problem."
+        )
+
+    return ordered
 
 
 def _dedupe_test_cases(cases: List[TestCaseCreate]) -> List[TestCaseCreate]:
@@ -195,12 +223,35 @@ class ProblemCountResponse(BaseModel):
 
 
 class ProblemGenerateRequest(BaseModel):
-    topic: str = Field(..., description="Topic or free-form prompt for the problem")
+    topic: Optional[str] = Field(
+        None,
+        description="Primary topic or free-form prompt",
+    )
+    topics: List[str] = Field(
+        default_factory=list,
+        description="Optional list of topics to blend into the generated problem",
+    )
     difficulty: str = Field(
         "easy",
         pattern="^(easy|medium|hard)$",
         description="Desired difficulty tier",
     )
+
+    @model_validator(mode="after")
+    def ensure_topic_present(self):
+        normalized_topics = []
+        if self.topic:
+            normalized_topics.append(self.topic.strip())
+        normalized_topics.extend([entry.strip() for entry in self.topics if entry and entry.strip()])
+
+        normalized_topics = [entry for entry in normalized_topics if entry]
+
+        if not normalized_topics:
+            raise ValueError("Provide at least one topic before generating a problem.")
+
+        self.topic = normalized_topics[0]
+        self.topics = normalized_topics[1:]
+        return self
 
 
 class ProblemGenerateBatchRequest(ProblemGenerateRequest):
@@ -872,8 +923,11 @@ async def generate_problem(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),  # ensure authenticated user
 ) -> ProblemGenerateResponse:
+    topic_order = _normalize_topics(payload.topic, payload.topics)
+    topic_prompt = ", ".join(topic_order)
+
     problem_payload = await _generate_problem_payload(
-        topic=payload.topic,
+        topic=topic_prompt,
         difficulty=payload.difficulty,
         db=db,
         ensure_unique_title=True,
@@ -917,8 +971,11 @@ async def generate_and_save_problem(
     db: Session = Depends(get_db),
     _: User = Depends(SaveDependency),
 ) -> ProblemGenerateResponse:
+    topic_order = _normalize_topics(payload.topic, payload.topics)
+    topic_prompt = ", ".join(topic_order)
+
     problem_payload = await _generate_problem_payload(
-        topic=payload.topic,
+        topic=topic_prompt,
         difficulty=payload.difficulty,
         db=db,
         ensure_unique_title=True,
@@ -952,9 +1009,12 @@ async def generate_problem_batch(
     generated_problems: List[ProblemOut] = []
     model_used = ""
 
+    topic_order = _normalize_topics(payload.topic, payload.topics)
+    topic_prompt = ", ".join(topic_order)
+
     for _ in range(payload.count):
         problem_payload = await _generate_problem_payload(
-            topic=payload.topic,
+            topic=topic_prompt,
             difficulty=payload.difficulty,
             db=db,
             ensure_unique_title=True,

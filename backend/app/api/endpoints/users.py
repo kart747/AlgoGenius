@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
-from typing import List, Optional
+from typing import Dict, List, Optional
 from datetime import date, datetime
 from app.database import get_db
 from app.models import User, Submission, Problem, UserSolvedProblem
@@ -19,6 +19,18 @@ class UserProfileResponse(BaseModel):
     current_streak: int
     last_submission_date: Optional[date]
     is_admin: bool
+    solved_count: int
+
+    class Config:
+        from_attributes = True
+
+
+class PublicUserProfileResponse(BaseModel):
+    id: int
+    username: str
+    xp: int
+    current_streak: int
+    last_submission_date: Optional[date]
     solved_count: int
 
     class Config:
@@ -149,9 +161,68 @@ def get_solved_problems(
         .all()
     )
 
+    return _build_solved_responses(entries, db)
+
+
+@router.get("/profile/{user_id}", response_model=PublicUserProfileResponse)
+def get_public_profile(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    solved_count = (
+        db.query(UserSolvedProblem)
+        .filter(UserSolvedProblem.user_id == user_id)
+        .count()
+    )
+
+    return PublicUserProfileResponse(
+        id=user.id,
+        username=user.username,
+        xp=user.xp or 0,
+        current_streak=user.current_streak or 0,
+        last_submission_date=user.last_submission_date,
+        solved_count=solved_count,
+    )
+
+
+@router.get("/{user_id}/solved", response_model=List[SolvedProblemResponse])
+def get_user_solved_problems(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    entries = (
+        db.query(UserSolvedProblem)
+        .options(joinedload(UserSolvedProblem.problem))
+        .filter(UserSolvedProblem.user_id == user_id)
+        .order_by(UserSolvedProblem.solved_at.desc())
+        .all()
+    )
+
+    return _build_solved_responses(entries, db)
+
+
+def _build_solved_responses(
+    entries: List[UserSolvedProblem],
+    db: Session,
+) -> List[SolvedProblemResponse]:
     response: List[SolvedProblemResponse] = []
+    problem_cache: Dict[int, Problem] = {}
+
     for entry in entries:
-        problem = entry.problem or db.query(Problem).filter(Problem.id == entry.problem_id).first()
+        problem = entry.problem
+        if not problem:
+            problem = problem_cache.get(entry.problem_id)
+            if not problem:
+                problem = (
+                    db.query(Problem)
+                    .filter(Problem.id == entry.problem_id)
+                    .first()
+                )
+                if problem:
+                    problem_cache[entry.problem_id] = problem
+
         response.append(
             SolvedProblemResponse(
                 problem_id=entry.problem_id,

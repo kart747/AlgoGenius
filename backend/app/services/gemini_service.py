@@ -59,6 +59,8 @@ class GeminiService:
         re.compile(r"\[\s*-?\d+(?:\s*,\s*-?\d+)+\s*\]"),
     ]
     
+    DEFAULT_PROBLEM_GEN_CONCURRENCY = 1
+
     def __init__(self, api_key: Optional[str] = None):
         """
         Initialize Gemini service with primary and fallback models.
@@ -89,6 +91,15 @@ class GeminiService:
             top_k=40,
             max_output_tokens=8192,
         )
+
+        # Limit concurrent full problem generations to protect primary model quota
+        semaphore_limit = int(
+            os.getenv(
+                "PROBLEM_GEN_CONCURRENCY_LIMIT",
+                str(self.DEFAULT_PROBLEM_GEN_CONCURRENCY),
+            )
+        )
+        self._problem_generation_semaphore = asyncio.Semaphore(max(1, semaphore_limit))
     
     def _log(self, message: str):
         """Structured logging for model usage"""
@@ -683,26 +694,27 @@ Return ONLY valid JSON in this exact format:
 Do not include markdown formatting or code blocks."""
         ).strip()
 
-        try:
-            # Use fallback logic to try primary then fallback model
-            response_text = await self._generate_with_fallback(prompt)
-            response_text = response_text.strip()
+        async with self._problem_generation_semaphore:
+            try:
+                # Use fallback logic to try primary then fallback model
+                response_text = await self._generate_with_fallback(prompt)
+                response_text = response_text.strip()
+                
+                # Clean markdown
+                if "```json" in response_text:
+                    response_text = response_text.split("```json")[1].split("```")[0].strip()
+                elif "```" in response_text:
+                    response_text = response_text.split("```")[1].split("```")[0].strip()
+                
+                problem_data = json.loads(response_text)
+                
+                return problem_data
             
-            # Clean markdown
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON response from Gemini: {str(e)}")
             
-            problem_data = json.loads(response_text)
-            
-            return problem_data
-        
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON response from Gemini: {str(e)}")
-        
-        except Exception as e:
-            raise Exception(f"Gemini API error: {str(e)}")
+            except Exception as e:
+                raise Exception(f"Gemini API error: {str(e)}")
 
 
 # Convenience functions for direct use

@@ -1,10 +1,15 @@
 "use client";
 
+import { toast } from "@/lib/toast";
 import {
   ProblemSection,
   ExampleCard,
   DifficultyBadge,
 } from "./SolveComponents";
+import { LANGUAGE_PRESETS } from "./languagePresets";
+import { useUserContext } from "../UserProvider";
+import AdminProblemDeleteButton from "../admin/AdminProblemDeleteButton";
+import ProblemComments from "./ProblemComments";
 
 function splitParagraphs(text) {
   if (!text) return [];
@@ -14,10 +19,31 @@ function splitParagraphs(text) {
     .filter(Boolean);
 }
 
-export default function ProblemPanel({ problem }) {
+export default function ProblemPanel({
+  problem,
+  functionTemplates = {},
+  onProblemDeleted,
+}) {
+  const { isAdmin } = useUserContext();
   const descriptionParagraphs = splitParagraphs(
     problem.description || problem.problem_statement || ""
   );
+
+  const hasTemplateData = LANGUAGE_PRESETS.some((preset) => {
+    const entry = functionTemplates?.[preset.id];
+    return entry?.template || entry?.loading || entry?.error;
+  });
+
+  const copyTemplate = async (template) => {
+    if (!template) return;
+    try {
+      await navigator.clipboard.writeText(template);
+      toast.success("Function template copied to clipboard.");
+    } catch (err) {
+      console.error("Copy failed", err);
+      toast.error("Unable to copy template.");
+    }
+  };
 
   return (
     <div className="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700 flex h-full flex-col overflow-y-auto">
@@ -30,6 +56,15 @@ export default function ProblemPanel({ problem }) {
             </h1>
             <DifficultyBadge difficulty={problem.difficulty} />
           </div>
+          {isAdmin && (
+            <div className="flex justify-end">
+              <AdminProblemDeleteButton
+                problemId={problem.id}
+                title={problem.title}
+                onDeleted={onProblemDeleted}
+              />
+            </div>
+          )}
         </div>
 
         {/* Description */}
@@ -93,6 +128,65 @@ export default function ProblemPanel({ problem }) {
           </ProblemSection>
         )}
 
+        {/* Function Templates */}
+        {hasTemplateData && (
+          <ProblemSection title="Function Templates">
+            <div className="space-y-4">
+              {LANGUAGE_PRESETS.map((preset) => {
+                const entry = functionTemplates?.[preset.id];
+                if (!entry) {
+                  return null;
+                }
+                const { template, loading, error } = entry;
+                return (
+                  <div
+                    key={preset.id}
+                    className="rounded-2xl border border-slate-700/60 bg-slate-900/40 p-4"
+                  >
+                    <div className="mb-3 flex flex-wrap items-center gap-3 justify-between">
+                      <div className="text-sm font-semibold text-slate-200">
+                        {preset.label}
+                      </div>
+                      {template && (
+                        <button
+                          type="button"
+                          onClick={() => copyTemplate(template)}
+                          className="rounded-full border border-slate-600 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-emerald-500 hover:text-emerald-200"
+                        >
+                          Copy Template
+                        </button>
+                      )}
+                      {loading && (
+                        <span className="text-xs text-slate-400">
+                          Generating...
+                        </span>
+                      )}
+                      {error && (
+                        <span className="text-xs text-rose-300">
+                          {error}
+                        </span>
+                      )}
+                    </div>
+                    {template ? (
+                      <pre className="rounded-lg border border-slate-800 bg-black/40 p-3 text-[11px] text-slate-200 whitespace-pre-wrap">
+                        {template}
+                      </pre>
+                    ) : loading ? (
+                      <p className="text-xs text-slate-400">
+                        Gemini is generating this template. Please hold tight.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500">
+                        Template unavailable for this language.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </ProblemSection>
+        )}
+
         {/* Hidden Tests Info */}
         {Array.isArray(problem.test_cases) && problem.test_cases.length > 0 && (
           <ProblemSection title="Test Cases">
@@ -108,6 +202,10 @@ export default function ProblemPanel({ problem }) {
             </div>
           </ProblemSection>
         )}
+
+        <ProblemSection title="Discussion">
+          <ProblemComments problemId={problem.id} />
+        </ProblemSection>
       </div>
     </div>
   );

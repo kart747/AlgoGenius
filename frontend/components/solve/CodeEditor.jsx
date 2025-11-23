@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { ActionButton } from "./SolveComponents";
+import { LANGUAGE_PRESETS } from "./languagePresets";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -16,60 +17,9 @@ const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ),
 });
 
-const LANGUAGE_OPTIONS = [
-  {
-    id: "python",
-    label: "Python 3",
-    icon: "🐍",
-    template: `import sys
-
-def solve():
-    data = sys.stdin.read().strip().split()
-    # TODO: implement solution
-    print(0)
-
-if __name__ == "__main__":
-    solve()
-`,
-  },
-  {
-    id: "cpp",
-    label: "C++17",
-    icon: "⚡",
-    template: `#include <bits/stdc++.h>
-using namespace std;
-
-int main() {
-    ios::sync_with_stdio(false);
-    cin.tie(nullptr);
-    // TODO: implement solution
-    cout << 0 << '\\n';
-    return 0;
-}
-`,
-  },
-  {
-    id: "java",
-    label: "Java 17",
-    icon: "☕",
-    template: `import java.io.*;
-import java.util.*;
-
-public class Main {
-    public static void main(String[] args) throws Exception {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        PrintWriter out = new PrintWriter(System.out);
-        // TODO: implement solution
-        out.println(0);
-        out.flush();
-    }
-}
-`,
-  },
-];
-
-const MIN_HEIGHT = 300;
-const MAX_HEIGHT = 800;
+const MIN_HEIGHT = 280;
+const MAX_HEIGHT = 760;
+const DEFAULT_EDITOR_HEIGHT = 420;
 
 export default function CodeEditor({
   problemId,
@@ -79,14 +29,21 @@ export default function CodeEditor({
   onLanguageChange,
   onCodeChange,
   onThemeChange,
+  functionTemplate,
+  onInsertTemplate,
+  templateLoading,
 }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [editorHeight, setEditorHeight] = useState(480);
-  const resizeRef = useRef({ active: false, startY: 0, startHeight: 480 });
+  const [editorHeight, setEditorHeight] = useState(DEFAULT_EDITOR_HEIGHT);
+  const resizeRef = useRef({
+    active: false,
+    startY: 0,
+    startHeight: DEFAULT_EDITOR_HEIGHT,
+  });
   const containerRef = useRef(null);
 
   const currentLanguage =
-    LANGUAGE_OPTIONS.find((opt) => opt.id === language) || LANGUAGE_OPTIONS[0];
+    LANGUAGE_PRESETS.find((opt) => opt.id === language) || LANGUAGE_PRESETS[0];
 
   // Autosave to localStorage
   useEffect(() => {
@@ -102,7 +59,7 @@ export default function CodeEditor({
 
   const handleReset = useCallback(() => {
     if (confirm(`Reset ${currentLanguage.label} code to template?`)) {
-      onCodeChange(currentLanguage.template);
+      onCodeChange(currentLanguage.fallbackTemplate);
     }
   }, [currentLanguage, onCodeChange]);
 
@@ -188,7 +145,7 @@ export default function CodeEditor({
       {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-slate-700/60 bg-slate-900/60 px-4 py-2">
         <div className="flex items-center gap-2">
-          {LANGUAGE_OPTIONS.map((opt) => (
+          {LANGUAGE_PRESETS.map((opt) => (
             <button
               key={opt.id}
               type="button"
@@ -256,6 +213,32 @@ export default function CodeEditor({
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
               />
             </svg>
+          </button>
+
+          <button
+            type="button"
+            onClick={onInsertTemplate}
+            disabled={Boolean(templateLoading)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+              templateLoading
+                ? "bg-slate-800 text-slate-500"
+                : functionTemplate
+                ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                : "bg-slate-800 text-white/80 hover:bg-slate-700"
+            }`}
+            title={
+              functionTemplate
+                ? "Insert the generated function template"
+                : templateLoading
+                ? "Generating template..."
+                : "Generate or insert the function template"
+            }
+          >
+            {templateLoading
+              ? "Generating..."
+              : functionTemplate
+              ? "Insert Template"
+              : "Generate Template"}
           </button>
 
           <button

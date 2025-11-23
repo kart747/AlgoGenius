@@ -43,7 +43,25 @@ export default async function DailyQuestionPage() {
     );
   }
 
-  const testCases = problem?.test_cases ?? [];
+  const examples = Array.isArray(problem?.examples)
+    ? problem.examples
+    : [];
+  const fallbackExamples =
+    examples.length === 0
+      ? (problem?.test_cases ?? [])
+          .slice(0, 2)
+          .map((testCase) => ({
+            input: testCase.input ?? testCase.input_data ?? "",
+            output:
+              testCase.expected_output ?? testCase.output ?? "",
+            explanation: testCase.explanation ?? "",
+          }))
+      : [];
+  const visibleExamples = examples.length ? examples : fallbackExamples;
+  const hiddenTestCount = Math.max(
+    (problem?.test_cases?.length ?? 0) - visibleExamples.length,
+    0
+  );
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-950">
@@ -65,19 +83,19 @@ export default async function DailyQuestionPage() {
               </p>
             </div>
 
-            {/* Test Cases Section */}
-            {testCases.length > 0 && (
+            {/* Example Cases Section */}
+            {visibleExamples.length > 0 && (
               <div>
                 <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-3">
                   Example Test Cases
                 </h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  Your solution will be tested with stdin input and compared
-                  against expected stdout.
+                  These samples mirror the exact stdin → stdout format your
+                  solution must follow.
                 </p>
-                {testCases.map((testCase, index) => (
+                {visibleExamples.map((example, index) => (
                   <div
-                    key={testCase.id ?? index}
+                    key={example.id ?? index}
                     className="mb-6 bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700"
                   >
                     <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">
@@ -90,7 +108,7 @@ export default async function DailyQuestionPage() {
                         </div>
                         <pre className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-3 overflow-x-auto">
                           <code className="text-sm text-gray-800 dark:text-gray-200">
-                            {testCase.input_data}
+                            {example.input}
                           </code>
                         </pre>
                       </div>
@@ -100,23 +118,34 @@ export default async function DailyQuestionPage() {
                         </div>
                         <pre className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-3 overflow-x-auto">
                           <code className="text-sm text-gray-800 dark:text-gray-200">
-                            {testCase.expected_output}
+                            {example.output}
                           </code>
                         </pre>
                       </div>
-                      {testCase.explanation && (
+                      {example.explanation && (
                         <div>
                           <div className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">
                             💡 Explanation
                           </div>
                           <p className="text-gray-700 dark:text-gray-300 text-sm">
-                            {testCase.explanation}
+                            {example.explanation}
                           </p>
                         </div>
                       )}
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {hiddenTestCount > 0 && (
+              <div className="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-sm text-gray-600 dark:text-gray-300">
+                <strong className="text-gray-900 dark:text-gray-100">
+                  {hiddenTestCount} additional hidden test case
+                  {hiddenTestCount === 1 ? "" : "s"}
+                </strong>{" "}
+                will be used to validate your submission beyond the examples
+                shown here.
               </div>
             )}
 

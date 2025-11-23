@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import api, { setToken } from "@/src/lib/api";
 import { useRouter } from "next/navigation";
+import { useUserContext } from "@/components/UserProvider";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const [success, setSuccess] = useState(false);
 
   const router = useRouter();
+  const { setUser } = useUserContext();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,18 +23,26 @@ export default function LoginPage() {
     setSuccess(false);
 
     try {
-      const response = await api.post("/auth/login", { email, password });
+      const { data } = await api.post("/auth/login", { email, password });
 
       setSuccess(true);
-      console.log("Login successful:", response.data);
 
-      // Store JWT and user info
-      setToken(response.data.access_token, {
-        user_id: response.data.user_id,
-        username: response.data.username,
-      });
+      setToken(data.access_token);
+      const userPayload = {
+        id: data.user_id,
+        username: data.username,
+        email: data.email,
+        is_admin: Boolean(data.is_admin),
+      };
+      try {
+        if (typeof window !== "undefined") {
+          localStorage.setItem("user", JSON.stringify(userPayload));
+        }
+      } catch (storageError) {
+        console.warn("Unable to persist user profile", storageError);
+      }
+      setUser(userPayload);
 
-      // redirect to home
       router.push("/");
     } catch (err) {
       setError(

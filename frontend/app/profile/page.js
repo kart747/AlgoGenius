@@ -1,125 +1,99 @@
-// Async function to fetch mock user data
-async function fetchUserData() {
-  // Mock user data for now
-  return {
-    username: 'JohnDoe',
-    currentStreak: 15,
-    totalXP: 2450,
-    problemsSolved: 42,
-    rank: 128,
-    joinedDate: 'January 2025',
-  };
-}
+"use client";
 
-export default async function ProfilePage() {
-  const userData = await fetchUserData();
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import api from "@/src/lib/api";
+import { useUserContext } from "@/components/UserProvider";
+import ProfileLayout from "@/components/profile/ProfileLayout";
+
+export default function ProfilePage() {
+  const { user, loading: userLoading, refresh } = useUserContext();
+  const [solvedProblems, setSolvedProblems] = useState([]);
+  const [solvedLoading, setSolvedLoading] = useState(false);
+  const [solvedError, setSolvedError] = useState(null);
+
+  const loadSolved = useCallback(async () => {
+    if (!user) {
+      setSolvedProblems([]);
+      setSolvedError(null);
+      return;
+    }
+
+    setSolvedLoading(true);
+    setSolvedError(null);
+
+    try {
+      const { data } = await api.get("/users/me/solved");
+      setSolvedProblems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      const detail =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Unable to load solved problems.";
+      setSolvedProblems([]);
+      setSolvedError(detail);
+    } finally {
+      setSolvedLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadSolved();
+  }, [loadSolved]);
+
+  const handleRefreshAll = useCallback(async () => {
+    await Promise.all([refresh(), loadSolved()]);
+  }, [refresh, loadSolved]);
+
+  if (userLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+        <p className="text-sm uppercase tracking-[0.3em] text-white/60">Loading profile…</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -top-24 right-16 h-72 w-72 rounded-full bg-indigo-500/20 blur-[120px]" />
+          <div className="absolute bottom-0 left-8 h-80 w-80 rounded-full bg-purple-500/20 blur-[120px]" />
+        </div>
+        <main className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center justify-center px-6 text-center">
+          <h1 className="text-4xl font-semibold">Log in to view your progress</h1>
+          <p className="mt-4 text-white/70">
+            Track solved problems, streaks, and personal milestones once you sign in.
+          </p>
+          <div className="mt-8 flex flex-col gap-4 sm:flex-row">
+            <Link
+              href="/login"
+              className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-white/20"
+            >
+              Login
+            </Link>
+            <Link
+              href="/signup"
+              className="rounded-full border border-white/20 px-8 py-3 text-sm font-semibold text-white/80 transition hover:border-white/40 hover:text-white"
+            >
+              Create Account
+            </Link>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <main className="container mx-auto px-4 py-8">
-        <h1 className="text-4xl font-bold text-gray-900 mb-8">
-          Profile
-        </h1>
-
-        {/* User Info Section */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-3xl font-bold">
-              {userData.username.charAt(0)}
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">
-                {userData.username}
-              </h2>
-              <p className="text-gray-600">
-                Member since {userData.joinedDate}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Current Streak Card */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-gray-700">
-                Current Streak
-              </h3>
-              <span className="text-2xl">🔥</span>
-            </div>
-            <p className="text-4xl font-bold text-blue-600">
-              {userData.currentStreak}
-            </p>
-            <p className="text-sm text-gray-500 mt-1">
-              days
-            </p>
-          </div>
-
-          {/* Total XP Card */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-gray-700">
-                Total XP
-              </h3>
-              <span className="text-2xl">⭐</span>
-            </div>
-            <p className="text-4xl font-bold text-green-600">
-              {userData.totalXP}
-            </p>
-            <p className="text-sm text-gray-500 mt-1">
-              experience points
-            </p>
-          </div>
-
-          {/* Problems Solved Card */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-gray-700">
-                Problems Solved
-              </h3>
-              <span className="text-2xl">✓</span>
-            </div>
-            <p className="text-4xl font-bold text-purple-600">
-              {userData.problemsSolved}
-            </p>
-            <p className="text-sm text-gray-500 mt-1">
-              challenges
-            </p>
-          </div>
-
-          {/* Rank Card */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-gray-700">
-                Global Rank
-              </h3>
-              <span className="text-2xl">🏆</span>
-            </div>
-            <p className="text-4xl font-bold text-orange-600">
-              #{userData.rank}
-            </p>
-            <p className="text-sm text-gray-500 mt-1">
-              worldwide
-            </p>
-          </div>
-        </div>
-
-        {/* Contribution Heatmap Placeholder */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h3 className="text-xl font-semibold text-gray-900 mb-4">
-            Contribution Activity
-          </h3>
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center">
-            <p className="text-gray-500 text-lg mb-2">
-              📊 Contribution Heatmap
-            </p>
-            <p className="text-gray-400 text-sm">
-              Heatmap visualization coming soon...
-            </p>
-          </div>
-        </div>
-      </main>
-    </div>
+    <ProfileLayout
+      profile={user}
+      solvedProblems={solvedProblems}
+      solvedLoading={solvedLoading}
+      solvedError={solvedError}
+      onRefreshProfile={handleRefreshAll}
+      onRefreshSolved={loadSolved}
+      isOwnProfile
+    />
   );
 }

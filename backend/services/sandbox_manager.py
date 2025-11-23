@@ -35,7 +35,7 @@ class SandboxManager:
         self.cpp_image = cpp_image or DEFAULT_CPP_IMAGE
         self.java_image = java_image or DEFAULT_JAVA_IMAGE
         self.mem_limit = "100m"
-        self.timeout = float(os.getenv("SANDBOX_TIMEOUT_SEC", "5"))
+        self.timeout = float(os.getenv("SANDBOX_TIMEOUT_SEC", "10"))
         self.cap_drop = ["ALL"]
         self.user = os.getenv("SANDBOX_USER", "nobody")
         self._ensured_images = SandboxManager._GLOBAL_IMAGE_CACHE
@@ -80,7 +80,7 @@ class SandboxManager:
                 read_only=True,
                 user=self.user,
                 cap_drop=self.cap_drop,
-                tmpfs={"/tmp": "rw,nosuid,nodev"},
+                tmpfs={"/tmp": "rw,nosuid,nodev,exec"},
                 detach=True,
                 stdout=True,
                 stderr=True,

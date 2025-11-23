@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import api from "@/src/lib/api";
 import AdminProblemDeleteButton from "@/components/admin/AdminProblemDeleteButton";
+import { useUserContext } from "@/components/UserProvider";
 
 const DIFFICULTY_OPTIONS = [
   { label: "All", value: "" },
@@ -43,6 +44,8 @@ export default function ProblemsListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [solvedProblems, setSolvedProblems] = useState([]);
+  const { user } = useUserContext();
 
   useEffect(() => {
     let cancelled = false;
@@ -124,6 +127,41 @@ export default function ProblemsListPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchSolvedProblems = async () => {
+      if (!user) {
+        setSolvedProblems([]);
+        return;
+      }
+
+      try {
+        const { data } = await api.get("/users/me/solved");
+        if (!cancelled) {
+          setSolvedProblems(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setSolvedProblems([]);
+        }
+      }
+    };
+
+    fetchSolvedProblems();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const solvedIds = useMemo(() => {
+    if (!solvedProblems?.length) {
+      return new Set();
+    }
+    return new Set(solvedProblems.map((entry) => entry.problem_id));
+  }, [solvedProblems]);
+
   const summaryText = useMemo(() => {
     if (!problems.length) {
       return "No problems available for the selected filters.";
@@ -148,7 +186,7 @@ export default function ProblemsListPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
-      <div className="absolute inset-0 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="pointer-events-none absolute -top-32 left-16 h-72 w-72 rounded-full bg-blue-500/20 blur-[120px]" />
         <div className="pointer-events-none absolute bottom-0 right-10 h-80 w-80 rounded-full bg-purple-500/20 blur-[120px]" />
       </div>
@@ -225,10 +263,17 @@ export default function ProblemsListPage() {
                 No problems match the current filters.
               </div>
             ) : (
-              problems.map((problem) => (
+              problems.map((problem) => {
+                const solved = solvedIds.has(problem.id);
+
+                return (
                 <article
                   key={problem.id}
-                  className="group flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:border-white/40 hover:bg-white/10"
+                    className={`group flex flex-col gap-4 rounded-2xl border p-5 transition hover:border-white/40 hover:bg-white/10 ${
+                      solved
+                        ? "border-emerald-400/40 bg-emerald-500/5"
+                        : "border-white/10 bg-white/5"
+                    }`}
                 >
                   <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-lg font-semibold text-white/95">
@@ -241,6 +286,12 @@ export default function ProblemsListPage() {
                     >
                       {humanDifficulty(problem.difficulty)}
                     </span>
+                      {solved && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-200">
+                          <span className="text-base">✓</span>
+                          Solved
+                        </span>
+                      )}
                   </div>
 
                   <p className="text-sm leading-relaxed text-white/70">
@@ -288,7 +339,8 @@ export default function ProblemsListPage() {
                     )}
                   </div>
                 </article>
-              ))
+                );
+              })
             )}
           </div>
         </section>

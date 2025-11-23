@@ -124,6 +124,10 @@ export default function GenerateProblemPage() {
           data.problem.reference_solution ||
           data.problem.reference_solutions ||
           {},
+        function_templates:
+          data.problem.function_templates ||
+          data.problem.function_template ||
+          {},
       };
 
       setGeneratedProblem(canonicalProblem);
@@ -203,33 +207,15 @@ export default function GenerateProblemPage() {
     };
 
     try {
-      let savedProblem = null;
-      try {
-        const { data } = await api.post("/problems/generate/save", {
-          topic,
-          difficulty,
-          force_new: true,
-          avoid_duplicates: true,
-          min_variation: "high",
-          seed: Date.now().toString(),
-        });
-        savedProblem = data?.problem ?? data ?? null;
-        setModelUsed((prev) => data?.model_used ?? prev);
-        setFallbackUsed(Boolean(data?.fallback_used ?? fallbackUsed));
-      } catch (primaryError) {
-        const status = primaryError?.response?.status;
-        if (!status || ![404, 405, 422].includes(status)) {
-          throw primaryError;
-        }
+      const { data } = await api.post("/problems", payload, {
+        timeout: 30000,
+      });
 
-        const { data } = await api.post("/problems", payload);
-        savedProblem = {
-          ...(generatedProblem || {}),
-          ...(data || {}),
-          id: data?.id ?? generatedProblem?.id ?? null,
-        };
-        setFallbackUsed(false);
-      }
+      const savedProblem = {
+        ...(generatedProblem || {}),
+        ...(data || {}),
+        id: data?.id ?? generatedProblem?.id ?? null,
+      };
 
       const newId = savedProblem?.id;
       if (!newId) {
@@ -237,7 +223,7 @@ export default function GenerateProblemPage() {
       }
 
       setSavedProblemId(newId);
-      setGeneratedProblem((prev) => ({ ...(prev || {}), ...savedProblem }));
+      setGeneratedProblem(savedProblem);
       toast.success("Problem saved to AlgoGenius. You can solve it now.");
     } catch (err) {
       const message = toDisplayString(
@@ -377,6 +363,54 @@ export default function GenerateProblemPage() {
     );
   };
 
+  const renderFunctionTemplates = () => {
+    const templates = generatedProblem?.function_templates || {};
+    const entries = Object.entries(templates);
+
+    if (!entries.length) {
+      return (
+        <p className="text-sm text-white/60">
+          No function templates were generated for this problem.
+        </p>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {entries.map(([lang, template]) => (
+          <div
+            key={lang}
+            className="rounded-2xl border border-white/10 bg-black/20 p-4"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-semibold text-white/90">
+                {lang.toUpperCase()}
+              </span>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(template);
+                    toast.success(`${lang.toUpperCase()} template copied.`);
+                  } catch (err) {
+                    console.error("Copy failed", err);
+                    toast.error("Unable to copy template.");
+                  }
+                }}
+                className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/70 transition hover:border-white/40 hover:text-white"
+              >
+                Copy
+              </button>
+            </div>
+            <pre className="max-h-72 overflow-auto rounded-xl border border-white/5 bg-black/50 p-3 text-xs text-white/80 whitespace-pre-wrap">
+              {template}
+            </pre>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const hiddenTestsCount =
     generatedProblem?.hidden_tests_count ??
     (Array.isArray(generatedProblem?.test_cases)
@@ -388,7 +422,7 @@ export default function GenerateProblemPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
-      <div className="absolute inset-0 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="pointer-events-none absolute -top-24 right-24 h-72 w-72 rounded-full bg-purple-500/20 blur-[120px]" />
         <div className="pointer-events-none absolute bottom-0 left-12 h-80 w-80 rounded-full bg-blue-500/20 blur-[120px]" />
       </div>
@@ -533,6 +567,13 @@ export default function GenerateProblemPage() {
                     Reference solutions
                   </h3>
                   {renderReferenceSolutions()}
+                </section>
+
+                <section className="space-y-3">
+                  <h3 className="text-lg font-semibold text-white/90">
+                    Function templates (parameter-based)
+                  </h3>
+                  {renderFunctionTemplates()}
                 </section>
 
                 <section className="space-y-3">
