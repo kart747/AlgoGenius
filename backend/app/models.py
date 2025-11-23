@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -21,6 +21,11 @@ class User(Base):
     # Relationship to submissions
     submissions = relationship("Submission", back_populates="user")
     comments = relationship("ProblemComment", back_populates="user", cascade="all, delete-orphan")
+    solved_problems = relationship(
+        "UserSolvedProblem",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
 
 class Submission(Base):
@@ -72,6 +77,11 @@ class Problem(Base):
         cascade="all, delete-orphan",
         order_by="ProblemComment.created_at",
     )
+    solved_entries = relationship(
+        "UserSolvedProblem",
+        back_populates="problem",
+        cascade="all, delete-orphan",
+    )
 
 
 class TestCase(Base):
@@ -121,3 +131,18 @@ class ProblemComment(Base):
 
     problem = relationship("Problem", back_populates="comments")
     user = relationship("User", back_populates="comments")
+
+
+class UserSolvedProblem(Base):
+    __tablename__ = "user_solved_problems"
+    __table_args__ = (UniqueConstraint("user_id", "problem_id", name="uq_user_problem"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    problem_id = Column(Integer, ForeignKey("problems.id"), nullable=False, index=True)
+    language = Column(String, nullable=False)
+    solution_code = Column(Text, nullable=False)
+    solved_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="solved_problems")
+    problem = relationship("Problem", back_populates="solved_entries")

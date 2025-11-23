@@ -227,7 +227,7 @@ def submit_code(
     db.commit()
     db.refresh(submission_record)
 
-    # On Accepted: award XP and update streak
+    # On Accepted: award XP, update streak, persist solved solution
     if passed_all:
         xp_award = XP_BY_DIFFICULTY.get((problem.difficulty or "").lower(), 10)
         current_user.xp = (current_user.xp or 0) + xp_award
@@ -245,6 +245,30 @@ def submit_code(
             current_user.current_streak = 1
 
         current_user.last_submission_date = today
+
+        solved_entry = (
+            db.query(models.UserSolvedProblem)
+            .filter(
+                models.UserSolvedProblem.user_id == current_user.id,
+                models.UserSolvedProblem.problem_id == submission.problem_id,
+            )
+            .first()
+        )
+
+        if solved_entry:
+            solved_entry.language = lang
+            solved_entry.solution_code = submission.code
+            solved_entry.solved_at = datetime.utcnow()
+        else:
+            solved_entry = models.UserSolvedProblem(
+                user_id=current_user.id,
+                problem_id=submission.problem_id,
+                language=lang,
+                solution_code=submission.code,
+                solved_at=datetime.utcnow(),
+            )
+            db.add(solved_entry)
+
         db.commit()
         db.refresh(current_user)
 

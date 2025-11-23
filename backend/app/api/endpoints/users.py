@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 from app.database import get_db
-from app.models import User, Submission, Problem
+from app.models import User, Submission, Problem, UserSolvedProblem
 from app.api.endpoints.auth import get_current_user
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -19,6 +19,7 @@ class UserProfileResponse(BaseModel):
     current_streak: int
     last_submission_date: Optional[date]
     is_admin: bool
+    solved_count: int
 
     class Config:
         from_attributes = True
@@ -46,14 +47,44 @@ class LeaderboardUserResponse(BaseModel):
         from_attributes = True
 
 
+class SolvedProblemResponse(BaseModel):
+    problem_id: int
+    problem_title: str
+    difficulty: str
+    language: str
+    solved_at: datetime
+    solution_code: str
+
+    class Config:
+        from_attributes = True
+
+
 # Endpoints
 @router.get("/me", response_model=UserProfileResponse)
-def get_user_profile(current_user: User = Depends(get_current_user)):
+def get_user_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Get the authenticated user's profile.
     Requires JWT authentication.
     """
-    return current_user
+    solved_count = (
+        db.query(UserSolvedProblem)
+        .filter(UserSolvedProblem.user_id == current_user.id)
+        .count()
+    )
+
+    return UserProfileResponse(
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        xp=current_user.xp or 0,
+        current_streak=current_user.current_streak or 0,
+        last_submission_date=current_user.last_submission_date,
+        is_admin=bool(current_user.is_admin),
+        solved_count=solved_count,
+    )
 
 
 @router.get("/me/submissions", response_model=List[SubmissionHistoryResponse])
@@ -103,3 +134,33 @@ def get_leaderboard(db: Session = Depends(get_db)):
     )
 
     return top_users
+
+
+@router.get("/me/solved", response_model=List[SolvedProblemResponse])
+def get_solved_problems(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    entries = (
+        db.query(UserSolvedProblem)
+        .options(joinedload(UserSolvedProblem.problem))
+        .filter(UserSolvedProblem.user_id == current_user.id)
+        .order_by(UserSolvedProblem.solved_at.desc())
+        .all()
+    )
+
+    response: List[SolvedProblemResponse] = []
+    for entry in entries:
+        problem = entry.problem or db.query(Problem).filter(Problem.id == entry.problem_id).first()
+        response.append(
+            SolvedProblemResponse(
+                problem_id=entry.problem_id,
+                problem_title=problem.title if problem else "Unknown",
+                difficulty=problem.difficulty if problem else "unknown",
+                language=entry.language,
+                solved_at=entry.solved_at,
+                solution_code=entry.solution_code,
+            )
+        )
+
+    return response
