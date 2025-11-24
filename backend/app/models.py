@@ -55,6 +55,7 @@ class Problem(Base):
     title = Column(String, nullable=False)
     description = Column(Text, nullable=False)
     difficulty = Column(String, nullable=False, default="easy")  # easy, medium, hard
+    topics = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

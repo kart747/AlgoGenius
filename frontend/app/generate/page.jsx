@@ -317,6 +317,10 @@ export default function GenerateProblemPage() {
       examples: normalizedExamples,
       test_cases: normalizedTestCases,
       reference_solution: referenceSolutions,
+      topics:
+        Array.isArray(generatedProblem.topics) && generatedProblem.topics.length
+          ? generatedProblem.topics
+          : selectedTopics,
     };
 
     try {

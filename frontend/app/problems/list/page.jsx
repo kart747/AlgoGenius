@@ -19,6 +19,9 @@ const SORT_OPTIONS = [
   { label: "A → Z", value: "alphabetical" },
 ];
 
+const TOPIC_PILL_CLASS =
+  "inline-flex items-center rounded-full border border-indigo-400/40 bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-100";
+
 function badgeStyle(difficulty) {
   switch ((difficulty || "").toLowerCase()) {
     case "easy":
@@ -265,9 +268,16 @@ export default function ProblemsListPage() {
             ) : (
               problems.map((problem) => {
                 const solved = solvedIds.has(problem.id);
+                const topicTags = Array.isArray(problem.topics)
+                  ? problem.topics
+                      .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
+                      .filter(Boolean)
+                  : [];
+                const visibleTopicTags = topicTags.slice(0, 4);
+                const hiddenTopicCount = Math.max(topicTags.length - visibleTopicTags.length, 0);
 
                 return (
-                <article
+                  <article
                   key={problem.id}
                     className={`group flex flex-col gap-4 rounded-2xl border p-5 transition hover:border-white/40 hover:bg-white/10 ${
                       solved
@@ -299,6 +309,28 @@ export default function ProblemsListPage() {
                       ? `${problem.description.slice(0, 200)}…`
                       : problem.description || "No description provided."}
                   </p>
+
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/50">
+                      Topics
+                    </span>
+                    {topicTags.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {visibleTopicTags.map((tag, idx) => (
+                          <span key={`${problem.id}-tag-${idx}`} className={TOPIC_PILL_CLASS}>
+                            {tag}
+                          </span>
+                        ))}
+                        {hiddenTopicCount > 0 && (
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                            +{hiddenTopicCount} more
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-white/50">No topic tags assigned.</p>
+                    )}
+                  </div>
 
                   <div className="flex flex-wrap items-center gap-3 text-sm text-white/50">
                     <span>

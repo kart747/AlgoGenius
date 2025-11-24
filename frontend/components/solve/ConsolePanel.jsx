@@ -12,11 +12,13 @@ export default function ConsolePanel({
   memoryUsage,
   busy,
   failedCaseDetails,
+  testCases = [],
   onTestInputChange,
   onRun,
   onSubmit,
 }) {
   const [activeTab, setActiveTab] = useState("input");
+  const hasTestCases = Array.isArray(testCases) && testCases.length > 0;
 
   return (
     <div className="flex flex-col border-t border-slate-700/60 bg-slate-900/40">
@@ -82,6 +84,66 @@ export default function ConsolePanel({
               placeholder="Paste test input here..."
               className="h-40 w-full rounded-lg border border-slate-700 bg-slate-950/60 p-3 font-mono text-sm text-slate-200 placeholder-slate-600 focus:border-indigo-500 focus:outline-none"
             />
+            {hasTestCases && (
+              <div className="space-y-3 rounded-lg border border-slate-800/60 bg-slate-950/50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-slate-400">
+                  <span>Hidden test cases ({testCases.length})</span>
+                  <button
+                    type="button"
+                    onClick={() => onTestInputChange(testCases[0]?.input || "")}
+                    className="font-semibold text-indigo-300 hover:text-indigo-200"
+                  >
+                    Use Case #1
+                  </button>
+                </div>
+                <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
+                  {testCases.map((testCase, idx) => {
+                    const normalizedInput = testCase.input || "";
+                    const isActive = normalizedInput === testInput;
+                    return (
+                      <div
+                        key={testCase.key ?? idx}
+                        className={`rounded-lg border p-3 text-[11px] text-slate-300 ${
+                          isActive
+                            ? "border-indigo-400/60 bg-indigo-500/10"
+                            : "border-slate-800 bg-slate-900/60"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                          <span>Case #{idx + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => onTestInputChange(normalizedInput)}
+                            className="text-indigo-300 hover:text-indigo-200"
+                          >
+                            Use Input
+                          </button>
+                        </div>
+                        <div className="mt-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            Input
+                          </div>
+                          <pre className="mt-1 rounded bg-black/40 p-2 font-mono text-[11px] text-slate-200 whitespace-pre-wrap">
+                            {normalizedInput || "(empty input)"}
+                          </pre>
+                        </div>
+                        <div className="mt-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            Expected Output
+                          </div>
+                          <pre className="mt-1 rounded bg-black/40 p-2 font-mono text-[11px] text-slate-200 whitespace-pre-wrap">
+                            {testCase.expected || "(empty output)"}
+                          </pre>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Selecting a case copies its stdin into your custom input so you can iterate quickly.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

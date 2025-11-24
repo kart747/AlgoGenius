@@ -43,6 +43,30 @@ function normalizeStatus(status) {
   return normalized || "PENDING";
 }
 
+function deriveDefaultTestInput(problem) {
+  if (!problem) return "";
+
+  const exampleList = Array.isArray(problem.examples) ? problem.examples : [];
+  for (const example of exampleList) {
+    const inputVal = example?.input ?? example?.input_data ?? "";
+    if (typeof inputVal === "string" && inputVal.trim().length) {
+      return inputVal;
+    }
+  }
+
+  const testCaseList = Array.isArray(problem.test_cases)
+    ? problem.test_cases
+    : [];
+  for (const testCase of testCaseList) {
+    const inputVal = testCase?.input ?? testCase?.input_data ?? "";
+    if (typeof inputVal === "string" && inputVal.trim().length) {
+      return inputVal;
+    }
+  }
+
+  return "";
+}
+
 function CelebrationOverlay({ intent, onComplete }) {
   const confettiPieces = useMemo(() =>
     Array.from({ length: 28 }).map((_, idx) => ({
@@ -115,7 +139,11 @@ export default function ProblemSolveShell({ problem }) {
     }, {})
   );
   const code = codeMap[language] ?? "";
-  const [testInput, setTestInput] = useState("");
+  const defaultTestInput = useMemo(
+    () => deriveDefaultTestInput(problem),
+    [problem?.id, problem?.examples, problem?.test_cases]
+  );
+  const [testInput, setTestInput] = useState(defaultTestInput);
   const [testOutput, setTestOutput] = useState("");
   const [diagnostic, setDiagnostic] = useState("");
   const [verdict, setVerdict] = useState("PENDING");
@@ -193,6 +221,19 @@ export default function ProblemSolveShell({ problem }) {
     [language]
   );
 
+  const normalizedTestCases = useMemo(() => {
+    if (!Array.isArray(problem?.test_cases)) {
+      return [];
+    }
+    return problem.test_cases
+      .map((testCase, idx) => ({
+        key: testCase?.id ?? idx,
+        input: testCase?.input ?? testCase?.input_data ?? "",
+        expected: testCase?.expected_output ?? testCase?.output ?? "",
+      }))
+      .filter((entry) => entry.input || entry.expected);
+  }, [problem?.test_cases]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const media = window.matchMedia("(min-width: 1280px)");
@@ -220,6 +261,10 @@ export default function ProblemSolveShell({ problem }) {
   useEffect(() => {
     assistantWidthRef.current = assistantWidth;
   }, [assistantWidth]);
+
+  useEffect(() => {
+    setTestInput(defaultTestInput);
+  }, [defaultTestInput]);
 
   useEffect(() => {
     if (!problem?.function_templates) return;
@@ -423,7 +468,9 @@ export default function ProblemSolveShell({ problem }) {
 
     if (status === "AC") {
       toast.success(message);
-      triggerCelebration(intent === "submit" ? "submit" : "run");
+      if (intent === "submit") {
+        triggerCelebration("submit");
+      }
     } else if (status === "PENDING" || status === "IDLE") {
       toast.info(message);
     } else {
@@ -718,6 +765,7 @@ export default function ProblemSolveShell({ problem }) {
             memoryUsage={memoryUsage}
             busy={busy}
             failedCaseDetails={failedCaseDetails}
+            testCases={normalizedTestCases}
             onTestInputChange={setTestInput}
             onRun={handleRun}
             onSubmit={handleSubmit}

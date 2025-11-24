@@ -36,6 +36,53 @@ FALLBACK_EXAMPLE_LIMIT = 3
 _FUNCTION_TEMPLATE_CACHE: Dict[Tuple[int, str], Tuple[str, str]] = {}
 
 
+def _sanitize_topics(topics: Optional[List[str]]) -> List[str]:
+    cleaned: List[str] = []
+    seen = set()
+    if not topics:
+        return cleaned
+
+    for topic in topics:
+        if not topic:
+            continue
+        normalized = topic.strip()
+        if not normalized:
+            continue
+        lowered = normalized.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        cleaned.append(normalized)
+
+    return cleaned
+
+
+def _dump_topics(topics: Optional[List[str]]) -> Optional[str]:
+    cleaned = _sanitize_topics(topics)
+    if not cleaned:
+        return None
+    try:
+        return json.dumps(cleaned, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_topics(raw: Optional[str]) -> List[str]:
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        data = raw.split(",") if isinstance(raw, str) else []
+
+    if isinstance(data, str):
+        data = [data]
+
+    if isinstance(data, list):
+        return _sanitize_topics([str(entry) for entry in data])
+
+    return []
+
 def _normalize_topics(primary: Optional[str], extras: List[str]) -> List[str]:
     ordered: List[str] = []
     seen = set()
@@ -192,6 +239,10 @@ class ProblemCreate(ProblemBase):
         default_factory=dict,
         description="Mapping of language -> reference implementation",
     )
+    topics: List[str] = Field(
+        default_factory=list,
+        description="Optional topical tags describing the problem",
+    )
 
 
 class ProblemUpdate(BaseModel):
@@ -200,6 +251,10 @@ class ProblemUpdate(BaseModel):
     difficulty: Optional[str] = Field(
         None, pattern="^(easy|medium|hard)$"
     )
+    topics: Optional[List[str]] = Field(
+        None,
+        description="Override the topical tags (pass an empty list to clear)",
+    )
 
 
 class ProblemOut(BaseModel):
@@ -207,6 +262,7 @@ class ProblemOut(BaseModel):
     title: str
     description: str
     difficulty: str
+    topics: List[str] = Field(default_factory=list)
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
     examples: List[ProblemExampleResponse] = Field(default_factory=list)
@@ -356,6 +412,7 @@ def _serialize_problem(problem: Problem) -> ProblemOut:
         title=problem.title,
         description=problem.description,
         difficulty=problem.difficulty,
+        topics=_parse_topics(getattr(problem, "topics", None)),
         created_at=problem.created_at,
         updated_at=problem.updated_at,
         examples=example_payloads,
@@ -396,11 +453,13 @@ def _create_problem_with_related(
     test_cases: List[TestCaseCreate],
     examples: List[ProblemExampleCreate],
     reference_solution: Dict[str, str],
+    topics: Optional[List[str]] = None,
 ) -> Problem:
     problem = Problem(
         title=title,
         description=description,
         difficulty=difficulty.lower(),
+        topics=_dump_topics(topics),
     )
 
     for tc in test_cases:
@@ -452,6 +511,7 @@ async def _generate_problem_payload(
     db: Optional[Session] = None,
     ensure_unique_title: bool = False,
     max_attempts: int = 5,
+    topic_list: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     service: GeminiService
     try:
@@ -565,6 +625,7 @@ async def _generate_problem_payload(
             "test_cases": test_cases,
             "reference_solution": reference_solution,
             "function_templates": function_templates,
+            "topics": topic_list or [],
             "model_used": problem_model_used or GeminiService.MODEL_PRIMARY,
             "fallback_used": fallback_used,
         }
@@ -590,6 +651,7 @@ def create_problem(problem: ProblemCreate, db: Session = Depends(get_db)) -> Pro
         test_cases=problem.test_cases,
         examples=problem.examples,
         reference_solution=problem.reference_solution,
+        topics=problem.topics,
     )
     return _serialize_problem(db_problem)
 
@@ -874,6 +936,8 @@ def update_problem(
         db_problem.description = problem_update.description
     if problem_update.difficulty is not None:
         db_problem.difficulty = problem_update.difficulty.lower()
+    if problem_update.topics is not None:
+        db_problem.topics = _dump_topics(problem_update.topics)
 
     db.commit()
     db.refresh(db_problem)
@@ -927,6 +991,7 @@ async def generate_problem(
         custom_prompt=payload.custom_prompt,
         db=db,
         ensure_unique_title=True,
+        topic_list=topic_order,
     )
 
     problem_out = ProblemOut(
@@ -934,6 +999,7 @@ async def generate_problem(
         title=problem_payload["title"],
         description=problem_payload["description"],
         difficulty=problem_payload["difficulty"],
+        topics=problem_payload.get("topics", []),
         examples=[
             ProblemExampleResponse(
                 id=None, input=ex.input, output=ex.output, explanation=ex.explanation
@@ -976,6 +1042,7 @@ async def generate_and_save_problem(
         custom_prompt=payload.custom_prompt,
         db=db,
         ensure_unique_title=True,
+        topic_list=topic_order,
     )
 
     db_problem = _create_problem_with_related(
@@ -986,6 +1053,7 @@ async def generate_and_save_problem(
         test_cases=problem_payload["test_cases"],
         examples=problem_payload["examples"],
         reference_solution=problem_payload["reference_solution"],
+        topics=topic_order,
     )
 
     problem_out = _serialize_problem(db_problem)
@@ -1016,6 +1084,7 @@ async def generate_problem_batch(
             custom_prompt=payload.custom_prompt,
             db=db,
             ensure_unique_title=True,
+            topic_list=topic_order,
         )
         db_problem = _create_problem_with_related(
             db=db,
@@ -1025,6 +1094,7 @@ async def generate_problem_batch(
             test_cases=problem_payload["test_cases"],
             examples=problem_payload["examples"],
             reference_solution=problem_payload["reference_solution"],
+            topics=topic_order,
         )
         serialized = _serialize_problem(db_problem)
         serialized.function_templates = problem_payload.get("function_templates", {})

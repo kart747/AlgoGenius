@@ -129,8 +129,12 @@ class SandboxManager:
             file = host_dir / "main.py"
             file.write_text(code, encoding="utf-8")
             mounts = {str(host_dir): {"bind": "/code", "mode": "ro"}}
-            env = {"USER_INPUT": input_data or ""}
-            cmd = 'printf "%s" "$USER_INPUT" | python3 /code/main.py'
+            env = {
+                "USER_INPUT": input_data or "",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONUNBUFFERED": "1",
+            }
+            cmd = 'printf "%s" "$USER_INPUT" | python3 -B -u /code/main.py'
             return self._run_container(self.py_image, cmd, mounts, env)
 
     def run_cpp(self, code: str, input_data: Optional[str]) -> Dict:
