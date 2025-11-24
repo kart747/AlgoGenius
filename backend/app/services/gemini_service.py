@@ -644,7 +644,8 @@ Guidelines:
     async def generate_complete_problem(
         self,
         topic: str,
-        difficulty: str = "easy"
+        difficulty: str = "easy",
+        custom_prompt: Optional[str] = None,
     ) -> Dict:
         """
         Generate a complete coding problem with description and test cases.
@@ -693,6 +694,11 @@ Return ONLY valid JSON in this exact format:
 
 Do not include markdown formatting or code blocks."""
         ).strip()
+
+        if custom_prompt:
+            prompt += "\n\nUser-provided instructions to incorporate:\n"
+            prompt += custom_prompt.strip()
+            prompt += "\n"
 
         async with self._problem_generation_semaphore:
             try:

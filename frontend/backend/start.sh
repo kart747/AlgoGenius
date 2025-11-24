@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Starting AlgoGenius Dummy Backend Server..."
+echo "🚀 Starting DevArena Dummy Backend Server..."
 echo ""
 
 # Check if virtual environment exists

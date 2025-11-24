@@ -444,7 +444,7 @@ function Login() {
 
   return (
     <div className="login-container">
-      <h2>Login to AlgoGenius</h2>
+      <h2>Login to DevArena</h2>
       
       <form onSubmit={handleSubmit}>
         <div className="form-group">

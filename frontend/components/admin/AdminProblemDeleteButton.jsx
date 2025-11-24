@@ -43,7 +43,7 @@ export default function AdminProblemDeleteButton({
       <button
         type="button"
         onClick={() => setModalOpen(true)}
-        className="inline-flex items-center rounded-md border border-rose-600 px-2.5 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-rose-400 dark:text-rose-200 dark:hover:bg-rose-400/10"
+        className="inline-flex items-center gap-1 rounded-full border border-rose-500/50 bg-rose-500/10 px-4 py-1.5 text-xs font-semibold text-rose-100 transition hover:border-rose-400 hover:bg-rose-500/20"
       >
         Delete
       </button>

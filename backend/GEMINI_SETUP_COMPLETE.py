@@ -128,7 +128,7 @@ POST /api/generate/gemini/startercode
 
 .env file:
   GEMINI_API_KEY=your-gemini-api-key-here
-  DATABASE_URL=postgresql+psycopg2://postgres:YOUR_PASSWORD@localhost:5432/algogenius
+  DATABASE_URL=postgresql+psycopg2://postgres:YOUR_PASSWORD@localhost:5432/devarena
   JWT_SECRET_KEY=your-super-secret-jwt-key-change-this-in-production
 
 main.py:

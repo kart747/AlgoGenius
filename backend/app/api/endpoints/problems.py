@@ -25,7 +25,7 @@ from app.models import (
 from app.services.gemini_service import get_gemini_service, GeminiService
 
 
-logger = logging.getLogger("algogenius.problems")
+logger = logging.getLogger("devarena.problems")
 
 
 router = APIRouter(prefix="/problems", tags=["problems"])
@@ -236,6 +236,11 @@ class ProblemGenerateRequest(BaseModel):
         pattern="^(easy|medium|hard)$",
         description="Desired difficulty tier",
     )
+    custom_prompt: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Optional custom instructions to bias the AI problem statement",
+    )
 
     @model_validator(mode="after")
     def ensure_topic_present(self):
@@ -443,6 +448,7 @@ async def _generate_problem_payload(
     *,
     topic: str,
     difficulty: str,
+    custom_prompt: Optional[str] = None,
     db: Optional[Session] = None,
     ensure_unique_title: bool = False,
     max_attempts: int = 5,
@@ -457,7 +463,11 @@ async def _generate_problem_payload(
     attempts_allowed = max_attempts if (ensure_unique_title and db) else 1
 
     for attempt in range(1, attempts_allowed + 1):
-        ai_problem = await service.generate_complete_problem(topic, difficulty)
+        ai_problem = await service.generate_complete_problem(
+            topic,
+            difficulty,
+            custom_prompt=custom_prompt,
+        )
         problem_model_used = service.get_last_model_used()
 
         title_candidate = (ai_problem.get("title") or topic.title()).strip()
@@ -521,20 +531,7 @@ async def _generate_problem_payload(
         description_text = ai_problem.get("description", "")
 
         async def build_language_assets(language: str):
-            starter = None
             template = None
-            try:
-                starter = await service.generate_starter_code(
-                    description_text,
-                    language,
-                )
-            except Exception as code_error:
-                logger.warning(
-                    "Failed to generate %s starter code: %s",
-                    language,
-                    code_error,
-                )
-
             try:
                 template = await service.generate_function_template(
                     problem_context or description_text,
@@ -546,15 +543,13 @@ async def _generate_problem_payload(
                     language,
                     template_error,
                 )
-            return language, starter, template
+            return language, template
 
         language_results = await asyncio.gather(
             *(build_language_assets(language) for language in ("python", "cpp", "java"))
         )
 
-        for language, starter, template in language_results:
-            if starter:
-                reference_solution[language] = starter
+        for language, template in language_results:
             if template:
                 function_templates[language] = template
 
@@ -929,6 +924,7 @@ async def generate_problem(
     problem_payload = await _generate_problem_payload(
         topic=topic_prompt,
         difficulty=payload.difficulty,
+        custom_prompt=payload.custom_prompt,
         db=db,
         ensure_unique_title=True,
     )
@@ -977,6 +973,7 @@ async def generate_and_save_problem(
     problem_payload = await _generate_problem_payload(
         topic=topic_prompt,
         difficulty=payload.difficulty,
+        custom_prompt=payload.custom_prompt,
         db=db,
         ensure_unique_title=True,
     )
@@ -1016,6 +1013,7 @@ async def generate_problem_batch(
         problem_payload = await _generate_problem_payload(
             topic=topic_prompt,
             difficulty=payload.difficulty,
+            custom_prompt=payload.custom_prompt,
             db=db,
             ensure_unique_title=True,
         )

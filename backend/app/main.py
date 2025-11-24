@@ -13,7 +13,7 @@ load_dotenv(dotenv_path=ENV_PATH, override=False)
 from app.api.endpoints import submissions, auth, problems, users, admin, generator
 
 app = FastAPI(
-    title="AlgoGenius Code Submission Platform",
+    title="DevArena Code Submission Platform",
     version="1.0.0",
     description="LeetCode-style platform with AI-powered problem generation"
 )
@@ -62,7 +62,7 @@ def read_root():
     """Health check endpoint"""
     return {
         "status": "online",
-        "message": "AlgoGenius API is running",
+        "message": "DevArena API is running",
         "version": "1.0.0",
         "docs": "/docs"
     }

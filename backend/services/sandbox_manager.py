@@ -21,7 +21,7 @@ import docker
 from docker.errors import ContainerError, APIError, ImageNotFound
 
 DEFAULT_PY_IMAGE = os.getenv("PY_IMAGE", "python:3.11-slim")
-DEFAULT_CPP_IMAGE = os.getenv("CPP_IMAGE", "gcc:12")
+DEFAULT_CPP_IMAGE = os.getenv("CPP_IMAGE", "gcc:13.2.0-bookworm")
 DEFAULT_JAVA_IMAGE = os.getenv("JAVA_IMAGE", "eclipse-temurin:17-jdk")
 
 
@@ -35,7 +35,7 @@ class SandboxManager:
         self.cpp_image = cpp_image or DEFAULT_CPP_IMAGE
         self.java_image = java_image or DEFAULT_JAVA_IMAGE
         self.mem_limit = "100m"
-        self.timeout = float(os.getenv("SANDBOX_TIMEOUT_SEC", "10"))
+        self.timeout = float(os.getenv("SANDBOX_TIMEOUT_SEC", "25"))
         self.cap_drop = ["ALL"]
         self.user = os.getenv("SANDBOX_USER", "nobody")
         self._ensured_images = SandboxManager._GLOBAL_IMAGE_CACHE

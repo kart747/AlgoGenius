@@ -4,7 +4,7 @@ from pydantic import BaseModel
 import asyncio
 from typing import Optional
 
-app = FastAPI(title="AlgoGenius Dummy Backend", version="1.0.0")
+app = FastAPI(title="DevArena Dummy Backend", version="1.0.0")
 
 # Enable CORS for Next.js frontend
 app.add_middleware(
@@ -35,7 +35,7 @@ class RegisterRequest(BaseModel):
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to AlgoGenius Dummy Backend!",
+        "message": "Welcome to DevArena Dummy Backend!",
         "status": "running",
         "endpoints": [
             "/problems/today",

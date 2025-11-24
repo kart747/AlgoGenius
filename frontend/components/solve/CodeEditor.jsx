@@ -29,9 +29,6 @@ export default function CodeEditor({
   onLanguageChange,
   onCodeChange,
   onThemeChange,
-  functionTemplate,
-  onInsertTemplate,
-  templateLoading,
 }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [editorHeight, setEditorHeight] = useState(DEFAULT_EDITOR_HEIGHT);
@@ -49,7 +46,7 @@ export default function CodeEditor({
   useEffect(() => {
     const timeout = setTimeout(() => {
       if (typeof window !== "undefined" && code) {
-        const key = `algogenius:solve:${problemId}:${language}`;
+        const key = `devarena:solve:${problemId}:${language}`;
         localStorage.setItem(key, code);
       }
     }, 500);
@@ -213,32 +210,6 @@ export default function CodeEditor({
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
               />
             </svg>
-          </button>
-
-          <button
-            type="button"
-            onClick={onInsertTemplate}
-            disabled={Boolean(templateLoading)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-              templateLoading
-                ? "bg-slate-800 text-slate-500"
-                : functionTemplate
-                ? "bg-emerald-600 text-white hover:bg-emerald-500"
-                : "bg-slate-800 text-white/80 hover:bg-slate-700"
-            }`}
-            title={
-              functionTemplate
-                ? "Insert the generated function template"
-                : templateLoading
-                ? "Generating template..."
-                : "Generate or insert the function template"
-            }
-          >
-            {templateLoading
-              ? "Generating..."
-              : functionTemplate
-              ? "Insert Template"
-              : "Generate Template"}
           </button>
 
           <button

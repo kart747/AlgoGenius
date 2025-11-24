@@ -1,4 +1,4 @@
-# 🎯 GitHub Upload Summary - AlgoGenius Project
+# 🎯 GitHub Upload Summary - DevArena Project
 
 ## ✅ SECURITY AUDIT COMPLETE
 
@@ -6,7 +6,7 @@
 
 #### Backend Secrets (backend/.env)
 
-1. **DATABASE_URL**: `postgresql+psycopg2://postgres:2461@localhost:5432/algogenius`
+1. **DATABASE_URL**: `postgresql+psycopg2://postgres:2461@localhost:5432/devarena`
 
    - ✅ Moved to environment variable
    - ✅ Loaded via `os.getenv("DATABASE_URL")`
@@ -100,7 +100,7 @@
 #### Backend (.env.example)
 
 ```bash
-DATABASE_URL=postgresql+psycopg2://postgres:YOUR_PASSWORD@localhost:5432/algogenius
+DATABASE_URL=postgresql+psycopg2://postgres:YOUR_PASSWORD@localhost:5432/devarena
 JWT_SECRET_KEY=your-super-secret-jwt-key-change-this-in-production
 GEMINI_API_KEY=your-gemini-api-key-here
 PY_IMAGE=python:3.11-slim
@@ -237,14 +237,14 @@ cd C:\Users\91808\Desktop\docker-sandbox-test
 
 # Stage all safe files
 git add .
-git commit -m "Initial commit: AlgoGenius competitive programming platform"
+git commit -m "Initial commit: DevArena competitive programming platform"
 ```
 
 ### 2. Create GitHub Repository
 
 - Open GitHub Desktop
 - Click "Publish repository"
-- Name: `algogenius` or `competitive-programming-platform`
+- Name: `devarena` or `competitive-programming-platform`
 - Description: "Full-stack LeetCode-style platform with AI problem generation"
 - Choose: Public or Private
 - ✅ Ensure "Keep this code private" is checked if you want it private
@@ -349,11 +349,11 @@ All security measures are in place. Your project is safe to push to GitHub.
 ```bash
 # If you haven't committed yet
 git add .
-git commit -m "Initial commit: AlgoGenius platform with secure environment setup"
+git commit -m "Initial commit: DevArena platform with secure environment setup"
 
 # Then use GitHub Desktop to push
 # Or use command line:
-git remote add origin https://github.com/YOUR_USERNAME/algogenius.git
+git remote add origin https://github.com/YOUR_USERNAME/devarena.git
 git branch -M main
 git push -u origin main
 ```

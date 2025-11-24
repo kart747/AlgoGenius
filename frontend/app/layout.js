@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "AlgoGenius - Master Algorithms",
-  description: "Learn and practice algorithms with AlgoGenius",
+  title: "DevArena - Master Algorithms",
+  description: "Learn and practice algorithms with DevArena",
 };
 
 export default function RootLayout({ children }) {

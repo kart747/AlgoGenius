@@ -1,6 +1,6 @@
-# AlgoGenius Dummy Backend
+# DevArena Dummy Backend
 
-This is a simple FastAPI dummy backend server for testing the AlgoGenius frontend.
+This is a simple FastAPI dummy backend server for testing the DevArena frontend.
 
 ## Setup Instructions
 

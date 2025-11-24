@@ -152,10 +152,38 @@ function splitParagraphs(text) {
     .filter(Boolean);
 }
 
+function deriveDefaultTestInput(problem) {
+  if (!problem) return "";
+
+  const exampleList = Array.isArray(problem.examples) ? problem.examples : [];
+  for (const example of exampleList) {
+    const inputVal =
+      (example && (example.input ?? example.input_data)) || "";
+    if (typeof inputVal === "string" && inputVal.trim().length) {
+      return inputVal;
+    }
+  }
+
+  const testCaseList = Array.isArray(problem.test_cases) ? problem.test_cases : [];
+  for (const testCase of testCaseList) {
+    const inputVal =
+      (testCase && (testCase.input ?? testCase.input_data)) || "";
+    if (typeof inputVal === "string" && inputVal.trim().length) {
+      return inputVal;
+    }
+  }
+
+  return "";
+}
+
 export default function ProblemSolveShell({ problem }) {
   const [language, setLanguage] = useState("python");
   const [code, setCode] = useState("");
-  const [testInput, setTestInput] = useState("");
+  const defaultCustomInput = useMemo(
+    () => deriveDefaultTestInput(problem),
+    [problem.id, problem.examples, problem.test_cases]
+  );
+  const [testInput, setTestInput] = useState(defaultCustomInput);
   const [testOutput, setTestOutput] = useState("");
   const [diagnostic, setDiagnostic] = useState("");
   const [verdict, setVerdict] = useState("PENDING");
@@ -166,6 +194,10 @@ export default function ProblemSolveShell({ problem }) {
   const [editorHeight, setEditorHeight] = useState(520);
   const resizeState = useRef({ active: false, startY: 0, startHeight: 520 });
 
+  useEffect(() => {
+    setTestInput(defaultCustomInput);
+  }, [defaultCustomInput]);
+
   const selectedLanguage = useMemo(
     () =>
       LANGUAGE_OPTIONS.find((option) => option.id === language) ??
@@ -173,8 +205,19 @@ export default function ProblemSolveShell({ problem }) {
     [language]
   );
 
+  const normalizedTestCases = useMemo(() => {
+    if (!Array.isArray(problem.test_cases)) return [];
+    return problem.test_cases
+      .map((testCase, idx) => ({
+        key: testCase?.id ?? idx,
+        input: testCase?.input ?? testCase?.input_data ?? "",
+        expected: testCase?.expected_output ?? testCase?.output ?? "",
+      }))
+      .filter((entry) => entry.input || entry.expected);
+  }, [problem.test_cases]);
+
   const storageKey = useCallback(
-    (lang) => `algogenius:solve:${problem.id}:language:${lang}`,
+    (lang) => `devarena:solve:${problem.id}:language:${lang}`,
     [problem.id]
   );
 
@@ -559,6 +602,57 @@ export default function ProblemSolveShell({ problem }) {
                 placeholder="Paste custom input here…"
                 className="mt-3 h-40 w-full rounded-2xl border border-white/10 bg-black/30 p-3 text-sm text-white/80 focus:border-white/40 focus:outline-none"
               />
+              {normalizedTestCases.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center justify-between text-xs text-white/60">
+                    <span>
+                      Available Test Cases ({normalizedTestCases.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTestInput(normalizedTestCases[0].input || "")
+                      }
+                      className="text-[11px] font-semibold uppercase tracking-wide text-indigo-300 hover:text-indigo-200"
+                    >
+                      Use Case #1
+                    </button>
+                  </div>
+                  <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                    {normalizedTestCases.map((testCase, idx) => (
+                      <div
+                        key={testCase.key}
+                        className="rounded-2xl border border-white/10 bg-black/25 p-3"
+                      >
+                        <div className="flex items-center justify-between text-xs text-white/60">
+                          <span>Case #{idx + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => setTestInput(testCase.input || "")}
+                            className="text-[11px] font-semibold uppercase tracking-wide text-indigo-300 hover:text-indigo-200"
+                          >
+                            Use Input
+                          </button>
+                        </div>
+                        <div className="mt-2 text-[11px] text-white/60">
+                          <div className="font-semibold text-white/70">Input</div>
+                          <pre className="mt-1 rounded bg-black/60 p-2 text-[11px] text-white/80 whitespace-pre-wrap">
+                            {testCase.input || "(empty input)"}
+                          </pre>
+                        </div>
+                        <div className="mt-2 text-[11px] text-white/60">
+                          <div className="font-semibold text-white/70">
+                            Expected Output
+                          </div>
+                          <pre className="mt-1 rounded bg-black/60 p-2 text-[11px] text-white/80 whitespace-pre-wrap">
+                            {testCase.expected || "(empty output)"}
+                          </pre>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="rounded-3xl border border-white/10 bg-black/40 p-4">
               <div className="flex items-center justify-between">

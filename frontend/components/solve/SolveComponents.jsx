@@ -88,7 +88,63 @@ export function ProblemSection({ title, children, className = "" }) {
   );
 }
 
+function buildVisualSteps(example) {
+  const explicitSteps =
+    example?.visual_explanation?.steps ||
+    example?.visual?.steps ||
+    example?.visualExplanation?.steps;
+
+  const normalize = (step, idx) => {
+    if (!step) {
+      return null;
+    }
+    if (typeof step === "string") {
+      return {
+        title: `Step ${idx + 1}`,
+        description: step.trim(),
+      };
+    }
+    if (typeof step === "object") {
+      return {
+        title: step.title || step.label || `Step ${idx + 1}`,
+        description: step.description || step.text || step.detail || "",
+      };
+    }
+    return null;
+  };
+
+  if (Array.isArray(explicitSteps) && explicitSteps.length) {
+    return explicitSteps.map((step, idx) => normalize(step, idx)).filter(Boolean);
+  }
+
+  // Derive pseudo-steps from the plain-text explanation when no structured data exists.
+  if (typeof example?.explanation === "string" && example.explanation.trim()) {
+    const sentences = example.explanation
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter(Boolean)
+      .slice(0, 4);
+    return sentences.map((sentence, idx) => ({
+      title: `Step ${idx + 1}`,
+      description: sentence,
+    }));
+  }
+
+  return [];
+}
+
 export function ExampleCard({ example, index }) {
+  const visualMetadata =
+    example.visual_explanation || example.visual || example.visualExplanation;
+  const visualImage =
+    visualMetadata?.image_url ||
+    visualMetadata?.imageUrl ||
+    visualMetadata?.image ||
+    visualMetadata?.url;
+  const visualCaption = visualMetadata?.caption || visualMetadata?.description;
+  const visualSteps = buildVisualSteps(example);
+  const hasVisualAid = Boolean(visualImage || visualSteps.length);
+
   return (
     <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4">
       <h4 className="mb-3 text-xs font-semibold text-slate-300">
@@ -115,6 +171,53 @@ export function ExampleCard({ example, index }) {
           <p className="text-xs leading-relaxed text-slate-400">
             {example.explanation}
           </p>
+        )}
+
+        {hasVisualAid && (
+          <div className="space-y-2 rounded-lg border border-indigo-500/30 bg-slate-950/40 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-200">
+              Visual Walkthrough
+            </div>
+            <div className="flex flex-col gap-4 lg:flex-row">
+              {visualImage && (
+                <div className="flex-1">
+                  <div className="overflow-hidden rounded-md border border-slate-800 bg-black/40">
+                    <img
+                      src={visualImage}
+                      alt={
+                        visualMetadata?.alt ||
+                        `Illustration for example ${index + 1}`
+                      }
+                      className="h-48 w-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                  {visualCaption && (
+                    <p className="mt-2 text-[11px] text-slate-400">
+                      {visualCaption}
+                    </p>
+                  )}
+                </div>
+              )}
+              {visualSteps.length > 0 && (
+                <ol className="flex-1 space-y-2 text-xs text-slate-200">
+                  {visualSteps.map((step, idx) => (
+                    <li
+                      key={`${step.title}-${idx}`}
+                      className="rounded-md border border-slate-800/80 bg-slate-900/40 p-3"
+                    >
+                      <div className="text-[11px] font-bold uppercase tracking-wide text-indigo-300">
+                        {step.title || `Step ${idx + 1}`}
+                      </div>
+                      {step.description && (
+                        <p className="mt-1 text-slate-300">{step.description}</p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>

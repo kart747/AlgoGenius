@@ -1,7 +1,7 @@
 """
 ===================================================================================
                     BACKEND STATUS REPORT
-           AlgoGenius - Code Submission Platform
+           DevArena - Code Submission Platform
 ===================================================================================
 
 Date: November 11, 2025
@@ -629,7 +629,7 @@ Problem Templates:
 
 📝 EXECUTIVE SUMMARY FOR COLLEGE PROJECT
 
-Project Name: AlgoGenius - AI-Powered Competitive Coding Platform
+Project Name: DevArena - AI-Powered Competitive Coding Platform
 Technology Stack: FastAPI, PostgreSQL, Docker, Google Gemini AI, SQLAlchemy
 Project Type: Full-Stack Web Application (Backend)
 Complexity Level: Advanced

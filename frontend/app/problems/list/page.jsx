@@ -197,7 +197,7 @@ export default function ProblemsListPage() {
             Problem Library
           </p>
           <h1 className="text-3xl font-bold sm:text-4xl">
-            Browse all AlgoGenius challenges
+            Browse all DevArena challenges
           </h1>
           <p className="text-white/60">{summaryText}</p>
         </header>

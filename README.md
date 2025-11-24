@@ -1,4 +1,4 @@
-# 🚀 AlgoGenius - Competitive Programming Platform
+# 🚀 DevArena - Competitive Programming Platform
 
 A full-stack LeetCode-style competitive programming platform with AI-powered problem generation, Docker-based code execution sandbox, and modern UI.
 
@@ -65,8 +65,8 @@ A full-stack LeetCode-style competitive programming platform with AI-powered pro
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/algogenius.git
-cd algogenius
+git clone https://github.com/YOUR_USERNAME/devarena.git
+cd devarena
 ```
 
 ### 2. Backend Setup
@@ -100,7 +100,7 @@ cp .env.example .env
 
 ```bash
 # Create PostgreSQL database
-createdb algogenius
+createdb devarena
 
 # Initialize database tables
 python -c "from app.database import engine; from app.models import Base; Base.metadata.create_all(bind=engine)"
@@ -155,7 +155,7 @@ npm run dev
 
 ```bash
 # Database
-DATABASE_URL=postgresql+psycopg2://postgres:YOUR_PASSWORD@localhost:5432/algogenius
+DATABASE_URL=postgresql+psycopg2://postgres:YOUR_PASSWORD@localhost:5432/devarena
 
 # JWT Authentication
 JWT_SECRET_KEY=your-super-secret-jwt-key-minimum-32-characters
@@ -185,7 +185,7 @@ NEXT_PUBLIC_API_TIMEOUT_MS=60000
 ## 📁 Project Structure
 
 ```
-algogenius/
+devarena/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
@@ -328,7 +328,7 @@ This project is licensed under the MIT License.
 For issues and questions:
 
 - Open an issue on GitHub
-- Email: support@algogenius.dev
+- Email: support@devarena.dev
 
 ## 🗺️ Roadmap
 
@@ -343,4 +343,4 @@ For issues and questions:
 
 ---
 
-Built with ❤️ by the AlgoGenius Team
+Built with ❤️ by the DevArena Team

@@ -15,6 +15,9 @@ const solidButton =
 const authButton =
   "rounded-full border border-white/20 bg-white/10 px-6 py-2 text-base font-medium text-white/90 transition duration-200 hover:border-white/40 hover:bg-white/20 hover:text-white";
 
+const signupButton =
+  "rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-500 px-6 py-2 text-base font-semibold text-slate-900 shadow-lg shadow-emerald-500/40 transition duration-200 hover:shadow-emerald-400/70 hover:scale-[1.02]";
+
 function useStoredUser() {
   const [user, setUserState] = useState(null);
 
@@ -225,7 +228,7 @@ export default function HomePage() {
               challenges.
             </h1>
             <p className="text-lg text-white/70 md:text-xl">
-              AlgoGenius combines curated practice with AI-generated problems so
+              DevArena combines curated practice with AI-generated problems so
               you can level up faster. Pick a challenge, code with stdin/stdout,
               and keep the streak alive.
             </p>
@@ -235,38 +238,32 @@ export default function HomePage() {
           </div>
 
           <div className="flex flex-col items-center justify-center gap-4">
-            <Link
-              href="/generate"
-              className={`${heroButtonsBase} ${solidButton} px-10 py-3 sm:px-12`}
-            >
-              ✨ Generate an AI Problem
-            </Link>
+            {isLoggedIn ? (
+              <Link
+                href="/generate"
+                className={`${heroButtonsBase} ${solidButton} px-10 py-3 sm:px-12`}
+              >
+                ✨ Generate an AI Problem
+              </Link>
+            ) : (
+              <div className="rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-white/70">
+                Log in to generate brand-new AI problems.
+              </div>
+            )}
             <div className="flex flex-wrap items-center justify-center gap-4">
               {isLoggedIn ? (
-                <>
-                  <Link
-                    href="/problems"
-                    className={`${heroButtonsBase} ${outlineButton}`}
-                  >
-                    💻 Solve Problems
-                  </Link>
-                  <Link
-                    href="/problems/list"
-                    className={`${heroButtonsBase} ${outlineButton}`}
-                  >
-                    📚 Existing Problems
-                  </Link>
-                  {/* Admin-specific controls live elsewhere; no duplicate buttons here. */}
-                </>
+                <Link
+                  href="/problems"
+                  className={`${heroButtonsBase} ${outlineButton}`}
+                >
+                  💻 Solve Problems
+                </Link>
               ) : (
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   <Link href="/login" className={authButton}>
                     Login
                   </Link>
-                  <Link
-                    href="/signup"
-                    className={`${authButton} bg-white/90 text-slate-900 hover:bg-white`}
-                  >
+                  <Link href="/signup" className={signupButton}>
                     Sign Up
                   </Link>
                 </div>
@@ -348,7 +345,7 @@ export default function HomePage() {
                 </li>
                 <li className="flex gap-2">
                   <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-indigo-400" />
-                  Keep your streak alive to climb the AlgoGenius leaderboard.
+                  Keep your streak alive to climb the DevArena leaderboard.
                 </li>
               </ul>
             </div>

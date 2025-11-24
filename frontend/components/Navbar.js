@@ -2,16 +2,18 @@
 
 import Link from "next/link";
 import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useUserContext } from "@/components/UserProvider";
 
 const navLinks = [
   { href: "/problems", label: "Problems" },
   { href: "/leaderboard", label: "Leaderboard" },
-  { href: "/generate", label: "Generate" },
-  { href: "/profile", label: "Profile" },
+  { href: "/generate", label: "Generate", requiresAuth: true },
+  { href: "/profile", label: "Profile", requiresAuth: true },
 ];
 
 export default function Navbar() {
+  const router = useRouter();
   const { user, setUser } = useUserContext();
   const isAuthenticated = Boolean(user);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -31,6 +33,19 @@ export default function Navbar() {
 
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
+  const handleProtectedNav = useCallback(
+    (event, link) => {
+      if (link.requiresAuth && !isAuthenticated) {
+        event.preventDefault();
+        closeMobile();
+        router.push(`/login?next=${encodeURIComponent(link.href)}`);
+        return;
+      }
+      closeMobile();
+    },
+    [closeMobile, isAuthenticated, router]
+  );
+
   return (
     <nav
       className="relative z-50 isolate border-b border-white/5 bg-slate-950/70 text-white shadow-lg shadow-black/40 backdrop-blur-xl supports-[backdrop-filter]:backdrop-blur-xl sticky top-0"
@@ -48,9 +63,9 @@ export default function Navbar() {
           onClick={closeMobile}
         >
           <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-semibold uppercase tracking-[0.2em] text-white/70">
-            AG
+            DA
           </span>
-          AlgoGenius
+          DevArena
         </Link>
 
         <div className="flex items-center gap-4">
@@ -60,7 +75,7 @@ export default function Navbar() {
                 key={link.href}
                 href={link.href}
                 className="rounded-full px-3 py-1 transition hover:bg-white/10 hover:text-white cursor-pointer"
-                onClick={closeMobile}
+                onClick={(event) => handleProtectedNav(event, link)}
               >
                 {link.label}
               </Link>
@@ -131,7 +146,7 @@ export default function Navbar() {
                   key={link.href}
                   href={link.href}
                   className="rounded-2xl px-4 py-3 transition hover:bg-white/10 hover:text-white cursor-pointer"
-                  onClick={closeMobile}
+                  onClick={(event) => handleProtectedNav(event, link)}
                 >
                   {link.label}
                 </Link>

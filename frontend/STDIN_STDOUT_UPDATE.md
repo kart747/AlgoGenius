@@ -1,11 +1,11 @@
-# AlgoGenius - Stdin/Stdout Update Summary
+# DevArena - Stdin/Stdout Update Summary
 
 ## Changes Made
 
 ### 1. **New Clean Home Page** (`app/page.js`)
 - Removed the problem display and code submission from the home page
 - Created a beautiful landing page with:
-  - Hero section with AlgoGenius branding
+  - Hero section with DevArena branding
   - Three feature cards (Daily Challenges, Real Testing, Track Progress)
   - Clear CTA button: "Start Today's Challenge" → links to `/daily-question`
   - Gradient background and modern design

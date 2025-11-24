@@ -16,6 +16,7 @@ const MIN_LEFT_WIDTH = 0.22;
 const MIN_MIDDLE_WIDTH = 0.28;
 const MIN_ASSISTANT_WIDTH = 0.2;
 const LANGUAGE_IDS = LANGUAGE_PRESETS.map((preset) => preset.id);
+const CONFETTI_COLORS = ["#c084fc", "#f472b6", "#22d3ee", "#f97316", "#a5b4fc"];
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -40,6 +41,67 @@ function normalizeStatus(status) {
   )
     return "RE";
   return normalized || "PENDING";
+}
+
+function CelebrationOverlay({ intent, onComplete }) {
+  const confettiPieces = useMemo(() =>
+    Array.from({ length: 28 }).map((_, idx) => ({
+      id: idx,
+      left: Math.random() * 100,
+      delay: Math.random() * 0.5,
+      duration: 2.4 + Math.random() * 1.2,
+      width: 6 + Math.random() * 6,
+      height: 10 + Math.random() * 12,
+      color: CONFETTI_COLORS[idx % CONFETTI_COLORS.length],
+    })),
+  []);
+
+  useEffect(() => {
+    const timer = setTimeout(onComplete, 4200);
+    return () => clearTimeout(timer);
+  }, [onComplete]);
+
+  const headline = intent === "submit" ? "Submission Accepted!" : "All Tests Passed!";
+  const subtitle =
+    intent === "submit"
+      ? "Your solution cleared every hidden judge."
+      : "Sample input and output checks look perfect.";
+  const chatLine =
+    intent === "submit"
+      ? "Judge Bot: Promotion-worthy performance!"
+      : "Sandbox: Keep that streak alive.";
+
+  return (
+    <div className="celebration-overlay">
+      {confettiPieces.map((piece) => (
+        <span
+          key={piece.id}
+          className="celebration-confetti"
+          style={{
+            left: `${piece.left}%`,
+            animationDelay: `${piece.delay}s`,
+            animationDuration: `${piece.duration}s`,
+            width: `${piece.width / 10}rem`,
+            height: `${piece.height / 10}rem`,
+            background: piece.color,
+          }}
+        />
+      ))}
+      <div className="celebration-card">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-200">
+          Victory
+        </p>
+        <h3 className="mt-1 text-2xl font-bold text-white">{headline}</h3>
+        <p className="mt-2 text-sm text-slate-300">{subtitle}</p>
+        <div className="celebration-chat">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-indigo-300">
+            AI Coach
+          </span>
+          <span>{chatLine}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ProblemSolveShell({ problem }) {
@@ -67,11 +129,20 @@ export default function ProblemSolveShell({ problem }) {
   const [leftWidth, setLeftWidth] = useState(0.35);
   const [assistantWidth, setAssistantWidth] = useState(0.25);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [celebrationState, setCelebrationState] = useState(null);
   const initializationRef = useRef({});
   const layoutRef = useRef(null);
   const dragStateRef = useRef(null);
   const leftWidthRef = useRef(leftWidth);
   const assistantWidthRef = useRef(assistantWidth);
+
+  const triggerCelebration = useCallback((intent) => {
+    setCelebrationState({ intent, id: Date.now() });
+  }, []);
+
+  const dismissCelebration = useCallback(() => {
+    setCelebrationState(null);
+  }, []);
 
   const setCodeForLanguage = useCallback((lang, newCode) => {
     setCodeMap((prev) => {
@@ -181,7 +252,7 @@ export default function ProblemSolveShell({ problem }) {
   }, [problem]);
 
   const storageKey = useCallback(
-    (lang) => `algogenius:solve:${problem.id}:${lang}`,
+    (lang) => `devarena:solve:${problem.id}:${lang}`,
     [problem.id]
   );
 
@@ -299,26 +370,6 @@ export default function ProblemSolveShell({ problem }) {
     [language, setCodeForLanguage]
   );
 
-  const handleInsertTemplate = useCallback(() => {
-    const entry = functionTemplateState[language];
-    const templateText = entry?.template;
-    if (!templateText) {
-      fetchFunctionTemplate(language);
-      toast.info("Requesting function template...");
-      return;
-    }
-
-    const shouldReplace =
-      !code.trim() ||
-      confirm("Replace the current code with the function template?");
-    if (!shouldReplace) {
-      return;
-    }
-
-    setCodeForLanguage(language, templateText);
-    toast.success("Function template inserted into the editor.");
-  }, [code, fetchFunctionTemplate, functionTemplateState, language, setCodeForLanguage]);
-
   const handleThemeChange = useCallback((newTheme) => {
     setTheme(newTheme);
   }, []);
@@ -372,12 +423,13 @@ export default function ProblemSolveShell({ problem }) {
 
     if (status === "AC") {
       toast.success(message);
+      triggerCelebration(intent === "submit" ? "submit" : "run");
     } else if (status === "PENDING" || status === "IDLE") {
       toast.info(message);
     } else {
       toast.error(message);
     }
-  }, []);
+  }, [triggerCelebration]);
 
   const handleRun = useCallback(async () => {
     if (!code.trim()) {
@@ -580,7 +632,7 @@ export default function ProblemSolveShell({ problem }) {
   }, [router]);
 
   return (
-    <div className="flex h-[calc(100vh-var(--navbar-height,72px))] flex-col overflow-hidden bg-slate-950 text-slate-100">
+    <div className="relative flex h-[calc(100vh-var(--navbar-height,72px))] flex-col overflow-hidden bg-slate-950 text-slate-100">
       {/* Header */}
       <header className="flex items-center justify-between border-b border-slate-700/60 bg-slate-900/80 px-6 py-4 backdrop-blur">
         <div>
@@ -622,7 +674,6 @@ export default function ProblemSolveShell({ problem }) {
         >
           <ProblemPanel
             problem={problem}
-            functionTemplates={functionTemplateState}
             onProblemDeleted={handleProblemDeleted}
           />
         </div>
@@ -656,9 +707,6 @@ export default function ProblemSolveShell({ problem }) {
             onLanguageChange={handleLanguageChange}
             onCodeChange={handleCodeChange}
             onThemeChange={handleThemeChange}
-            functionTemplate={functionTemplateState[language]?.template}
-            templateLoading={functionTemplateState[language]?.loading}
-            onInsertTemplate={handleInsertTemplate}
           />
 
           <ConsolePanel
@@ -705,6 +753,9 @@ export default function ProblemSolveShell({ problem }) {
           />
         </div>
       </div>
+      {celebrationState && (
+        <CelebrationOverlay intent={celebrationState.intent} onComplete={dismissCelebration} />
+      )}
     </div>
   );
 }

@@ -134,7 +134,7 @@ export default function ProfileLayout({
                   {isOwnProfile ? "Profile" : "User Profile"}
                 </p>
                 <h1 className="text-3xl font-semibold text-white">
-                  {profile?.username || profile?.email || "AlgoGenius user"}
+                  {profile?.username || profile?.email || "DevArena user"}
                 </h1>
                 {profile?.email && (
                   <p className="text-sm text-white/70">{profile.email}</p>

@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+
 export default function ConfirmDeleteModal({
   title,
   description,
@@ -10,9 +13,20 @@ export default function ConfirmDeleteModal({
   onConfirm,
   onCancel,
 }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
+  if (!mounted || typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/70 p-4 backdrop-blur">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl shadow-black/40 dark:bg-slate-900">
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
             {title}
@@ -46,6 +60,7 @@ export default function ConfirmDeleteModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

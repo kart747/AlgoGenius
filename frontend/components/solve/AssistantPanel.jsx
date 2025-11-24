@@ -85,7 +85,7 @@ export default function AssistantPanel({ problemId, latestCode, onClose }) {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
   const storageKey = useMemo(
-    () => `algogenius:assistant:${problemId}`,
+    () => `devarena:assistant:${problemId}`,
     [problemId]
   );
 

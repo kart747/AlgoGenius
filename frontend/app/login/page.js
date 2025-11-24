@@ -58,7 +58,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gray-100 dark:bg-gray-950 flex items-center justify-center px-4">
       <div className="max-w-md w-full bg-white dark:bg-gray-900 rounded-lg shadow-lg p-8">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 text-center mb-6">
-          Login to AlgoGenius
+          Login to DevArena
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-6">

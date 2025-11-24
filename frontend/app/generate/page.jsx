@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/src/lib/api";
 import { toast } from "@/lib/toast";
+import { useUserContext } from "@/components/UserProvider";
 
 const TOPICS = [
   "arrays",
@@ -27,11 +28,26 @@ const PLACEHOLDER_MESSAGES = [
   "Crafting a unique problem…",
 ];
 
+const MAX_TOPICS = 4;
+
+const normalizeTopicKey = (value = "") => value.trim().toLowerCase();
+
+const formatTopicLabel = (value = "") =>
+  value
+    .split(" ")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+
 export default function GenerateProblemPage() {
   const router = useRouter();
+  const { user, loading: userLoading } = useUserContext();
 
-  const [topic, setTopic] = useState(TOPICS[0]);
+  const [selectedTopics, setSelectedTopics] = useState([TOPICS[0]]);
   const [difficulty, setDifficulty] = useState("easy");
+  const [customTopicInput, setCustomTopicInput] = useState("");
+  const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -44,6 +60,86 @@ export default function GenerateProblemPage() {
   const [savedProblemId, setSavedProblemId] = useState(null);
 
   const [error, setError] = useState(null);
+  useEffect(() => {
+    if (!userLoading && !user) {
+      router.replace("/login?next=/generate");
+    }
+  }, [router, user, userLoading]);
+
+  if (userLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+        <p className="text-sm uppercase tracking-[0.3em] text-white/60">Loading…</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+        <p className="text-sm uppercase tracking-[0.3em] text-white/60">Redirecting to login…</p>
+      </div>
+    );
+  }
+
+
+  const primaryTopic = selectedTopics[0] || "";
+  const selectedTopicLimitReached = selectedTopics.length >= MAX_TOPICS;
+
+  const handleTopicToggle = (rawValue) => {
+    const candidate = rawValue.trim();
+    if (!candidate) {
+      return;
+    }
+
+    setSelectedTopics((prev) => {
+      const exists = prev.some(
+        (entry) => normalizeTopicKey(entry) === normalizeTopicKey(candidate)
+      );
+      if (exists) {
+        if (prev.length === 1) {
+          toast.error("Keep at least one topic selected.");
+          return prev;
+        }
+        return prev.filter(
+          (entry) => normalizeTopicKey(entry) !== normalizeTopicKey(candidate)
+        );
+      }
+
+      if (prev.length >= MAX_TOPICS) {
+        toast.error(`Select up to ${MAX_TOPICS} topics.`);
+        return prev;
+      }
+
+      return [...prev, candidate];
+    });
+  };
+
+  const handleMakePrimaryTopic = (rawValue) => {
+    const targetKey = normalizeTopicKey(rawValue);
+    setSelectedTopics((prev) => {
+      const target = prev.find(
+        (entry) => normalizeTopicKey(entry) === targetKey
+      );
+      if (!target || prev[0] === target) {
+        return prev;
+      }
+      const others = prev.filter(
+        (entry) => normalizeTopicKey(entry) !== targetKey
+      );
+      return [target, ...others];
+    });
+  };
+
+  const handleCustomTopicAdd = () => {
+    const value = customTopicInput.trim();
+    if (!value) {
+      toast.error("Type a topic before adding it.");
+      return;
+    }
+    handleTopicToggle(value);
+    setCustomTopicInput("");
+  };
 
   useEffect(() => {
     if (!isGenerating) {
@@ -94,21 +190,38 @@ export default function GenerateProblemPage() {
   }, [generatedProblem]);
 
   const handleGenerate = async () => {
+    if (!primaryTopic) {
+      toast.error("Select at least one topic before generating a problem.");
+      return;
+    }
+
+    const customPromptPayload =
+      customPromptEnabled && customPrompt.trim().length > 0
+        ? customPrompt.trim()
+        : null;
+
     setIsGenerating(true);
     setError(null);
     setSavedProblemId(null);
 
     try {
+      const payload = {
+        topic: primaryTopic,
+        topics: selectedTopics.slice(1),
+        difficulty,
+        force_new: true,
+        avoid_duplicates: true,
+        min_variation: "high",
+        seed: Date.now().toString(),
+      };
+
+      if (customPromptPayload) {
+        payload.custom_prompt = customPromptPayload;
+      }
+
       const { data } = await api.post(
         "/problems/generate",
-        {
-          topic,
-          difficulty,
-          force_new: true,
-          avoid_duplicates: true,
-          min_variation: "high",
-          seed: Date.now().toString(),
-        },
+        payload,
         {
           timeout: 120000,
         }
@@ -224,7 +337,7 @@ export default function GenerateProblemPage() {
 
       setSavedProblemId(newId);
       setGeneratedProblem(savedProblem);
-      toast.success("Problem saved to AlgoGenius. You can solve it now.");
+      toast.success("Problem saved to DevArena. You can solve it now.");
     } catch (err) {
       const message = toDisplayString(
         err?.response?.data?.detail ||
@@ -329,9 +442,16 @@ export default function GenerateProblemPage() {
   const renderReferenceSolutions = () => {
     if (!referenceLanguages.length) {
       return (
-        <p className="text-sm text-white/60">
-          No reference solutions generated.
-        </p>
+        <div className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-4">
+          <p className="text-sm font-semibold text-white/80">
+            Reference solutions are disabled.
+          </p>
+          <p className="text-xs text-white/60">
+            We now skip auto-generating answers so you can focus on solving the
+            prompt without spoilers. Save and open the challenge in the solve
+            workspace when you are ready to code.
+          </p>
+        </div>
       );
     }
 
@@ -437,7 +557,7 @@ export default function GenerateProblemPage() {
           </h1>
           <p className="text-white/70">
             Choose a topic and difficulty, let Gemini craft the challenge, save
-            it to AlgoGenius, and jump straight into solving.
+            it to DevArena, and jump straight into solving.
           </p>
         </header>
         <section className="grid gap-8 lg:grid-cols-[1.1fr_1fr]">
@@ -463,26 +583,144 @@ export default function GenerateProblemPage() {
                   ))}
                 </select>
               </label>
-              <label className="space-y-2 text-sm text-white/70">
-                <span className="font-semibold text-white/80">
-                  Select topic
+              <div className="space-y-3 text-sm text-white/70 md:col-span-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-white/80">
+                    Topic focus
+                  </span>
+                  <span className="text-xs text-white/50">
+                    {selectedTopics.length}/{MAX_TOPICS} selected
+                  </span>
+                </div>
+                <p className="text-xs text-white/60">
+                  Pick up to {MAX_TOPICS} topics. Click a pill to add or remove it.
+                  The order below controls how the AI blends them.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {TOPICS.map((value) => {
+                    const isActive = selectedTopics.some(
+                      (entry) => normalizeTopicKey(entry) === normalizeTopicKey(value)
+                    );
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => handleTopicToggle(value)}
+                        className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                          isActive
+                            ? "bg-white text-slate-900"
+                            : "bg-white/10 text-white/70 hover:bg-white/20"
+                        }`}
+                      >
+                        {formatTopicLabel(value)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/40">
+                    Selected order
+                  </p>
+                  {selectedTopics.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-white/80">
+                      {selectedTopics.map((value, index) => (
+                        <li
+                          key={`${value}-${index}`}
+                          className="flex flex-col gap-2 rounded-xl bg-white/5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-white/60">
+                              {index + 1}.
+                            </span>
+                            <span className="font-medium text-white">
+                              {formatTopicLabel(value)}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {index > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleMakePrimaryTopic(value)}
+                                className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/70 transition hover:border-white/40 hover:text-white"
+                              >
+                                Move up
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleTopicToggle(value)}
+                              className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/70 transition hover:border-white/40 hover:text-white"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-xs text-white/60">
+                      Select at least one topic to continue.
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={customTopicInput}
+                    onChange={(event) => setCustomTopicInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleCustomTopicAdd();
+                      }
+                    }}
+                    placeholder="Add a custom topic (e.g., bitmask dp)"
+                    className="flex-1 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/50 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCustomTopicAdd}
+                    disabled={selectedTopicLimitReached}
+                    className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+                      selectedTopicLimitReached
+                        ? "bg-white/10 text-white/40"
+                        : "bg-white text-slate-900 hover:bg-slate-100"
+                    }`}
+                  >
+                    Add topic
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+              <label className="flex items-center gap-3 text-white/80">
+                <input
+                  type="checkbox"
+                  checked={customPromptEnabled}
+                  onChange={(event) => {
+                    setCustomPromptEnabled(event.target.checked);
+                    if (!event.target.checked) {
+                      setCustomPrompt("");
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-white/30 bg-transparent accent-emerald-400"
+                />
+                <span className="font-semibold">
+                  Add custom prompt instructions
                 </span>
-                <select
-                  value={topic}
-                  onChange={(event) => setTopic(event.target.value)}
-                  className="w-full rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm text-white focus:border-white/50 focus:outline-none"
-                >
-                  {TOPICS.map((value) => (
-                    <option
-                      key={value}
-                      value={value}
-                      className="text-slate-900"
-                    >
-                      {value.charAt(0).toUpperCase() + value.slice(1)}
-                    </option>
-                  ))}
-                </select>
               </label>
+              {customPromptEnabled && (
+                <textarea
+                  value={customPrompt}
+                  onChange={(event) => setCustomPrompt(event.target.value)}
+                  maxLength={1200}
+                  placeholder="Describe constraints, storytelling, or anything Gemini should emphasize."
+                  className="mt-3 h-28 w-full rounded-2xl border border-white/20 bg-white/10 p-3 text-sm text-white placeholder:text-white/40 focus:border-white/50 focus:outline-none"
+                />
+              )}
+              <p className="mt-2 text-xs text-white/50">
+                Leave blank to let DevArena craft the prompt automatically.
+              </p>
             </div>
 
             <button
@@ -582,8 +820,8 @@ export default function GenerateProblemPage() {
                   </h3>
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
                     The full Monaco editor will be available on the solve page.
-                    Use the reference solutions above as a starting point if
-                    needed.
+                    Craft your own approach—there are no spoiler solutions to
+                    lean on.
                   </div>
                 </section>
               </article>
@@ -594,21 +832,30 @@ export default function GenerateProblemPage() {
             <h3 className="text-lg font-semibold text-white/90">Next steps</h3>
             <p className="text-sm text-white/70">
               Generate a problem, review the prompt, and when you are ready,
-              save it to make it part of the AlgoGenius platform. Once saved,
+              save it to make it part of the DevArena platform. Once saved,
               you can jump straight into solving with the full editor
               experience.
             </p>
 
             <button
               onClick={handleSave}
-              disabled={!generatedProblem || isGenerating || isSaving}
+              disabled={
+                !generatedProblem ||
+                isGenerating ||
+                isSaving ||
+                Boolean(savedProblemId)
+              }
               className={`w-full rounded-full px-6 py-3 text-sm font-semibold text-white transition ${
-                !generatedProblem || isGenerating || isSaving
+                !generatedProblem || isGenerating || isSaving || savedProblemId
                   ? "bg-white/20 text-white/50"
                   : "bg-emerald-500 hover:bg-emerald-600"
               }`}
             >
-              {isSaving ? "Saving..." : "Save to Platform"}
+              {savedProblemId
+                ? "Saved"
+                : isSaving
+                ? "Saving..."
+                : "Save to Platform"}
             </button>
 
             <button

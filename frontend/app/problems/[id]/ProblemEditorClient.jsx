@@ -48,7 +48,7 @@ export default function ProblemEditorClient({ problemId }) {
   const editorRef = useRef(null);
 
   const storageKey = (lang) =>
-    `algogenius:problem:${problemId}:language:${lang}`;
+    `devarena:problem:${problemId}:language:${lang}`;
 
   useEffect(() => {
     let isMounted = true;

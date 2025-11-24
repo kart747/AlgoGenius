@@ -31,7 +31,7 @@ export default async function LeaderboardPage() {
       <main className="relative mx-auto flex max-w-6xl flex-col gap-10 px-6 pb-16 pt-24">
         <div className="text-center space-y-4">
           <p className="text-sm uppercase tracking-[0.4em] text-white/60">Community Rankings</p>
-          <h1 className="text-4xl font-bold text-white md:text-5xl">AlgoGenius Leaderboard</h1>
+            <h1 className="text-4xl font-bold text-white md:text-5xl">DevArena Leaderboard</h1>
           <p className="text-white/70">
             Grinding daily builds streaks, XP, and reputation. Sit on the throne or catch the ones who do.
           </p>
